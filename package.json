@@ -20,7 +20,8 @@
     "db:crear-admin:desarrollo": "cross-env APP_ENV=desarrollo tsx src/db/crear-admin.ts",
     "db:studio": "cross-env APP_ENV=local drizzle-kit studio",
     "db:studio:desarrollo": "cross-env APP_ENV=desarrollo drizzle-kit studio",
-    "start:render": "node dist/db/migrate.js && node dist/index.js"
+    "start:render": "node dist/index.js",
+    "postinstall": "node scripts/postinstall.mjs"
   },
   "repository": {
     "type": "git",

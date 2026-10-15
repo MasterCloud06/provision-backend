@@ -9,8 +9,8 @@ services:
     region: virginia
     branch: main
     buildCommand: npm ci && npm run build
-    # Aplica las migraciones pendientes y luego arranca la API
-    startCommand: npm run start:render
+    # Al arrancar aplica las migraciones pendientes
+    startCommand: node dist/index.js
     healthCheckPath: /salud
     envVars:
       - key: APP_ENV

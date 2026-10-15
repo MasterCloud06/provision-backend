@@ -48,7 +48,7 @@ El entorno de desarrollo se despliega en Render con `render.yaml`:
 2. Cuando lo pida, completa:
    - `DATABASE_URL` → la **Internal Database URL** de tu base en Render.
    - `CORS_ORIGIN` → la URL del frontend de desarrollo (por ahora puede ser `http://localhost:5173`).
-3. `JWT_SECRET` lo genera Render solo. En cada despliegue se aplican las migraciones pendientes y luego arranca la API (`npm run start:render`).
+3. `JWT_SECRET` lo genera Render solo. Al arrancar, la API aplica sola las migraciones pendientes; el build se hace automáticamente tras `npm install`.
 4. La región del servicio en `render.yaml` debe ser la misma que la de la base.
 
 Para trabajar contra esa base **desde tu computadora** (migraciones manuales, `db:crear-admin:desarrollo`, `db:studio:desarrollo`), en `.env.desarrollo` usa la **External Database URL** con `DATABASE_SSL=true`. La Internal solo funciona dentro de Render.
