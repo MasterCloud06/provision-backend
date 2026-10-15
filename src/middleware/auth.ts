@@ -23,6 +23,8 @@ export function autenticar(db: DB): RequestHandler {
     try {
       const payload = jwt.verify(header.slice(7), env.JWT_SECRET);
       if (typeof payload === 'string' || !payload.sub) throw new Error();
+      // Un token de cliente de la tienda web nunca abre el sistema interno.
+      if (payload.aud === 'tienda' || (Array.isArray(payload.aud) && payload.aud.includes('tienda'))) throw new Error();
       sub = payload.sub;
     } catch {
       throw noAutorizado('Token inválido o expirado');

@@ -2,7 +2,7 @@ import { PGlite } from '@electric-sql/pglite';
 import { drizzle } from 'drizzle-orm/pglite';
 import { migrate } from 'drizzle-orm/pglite/migrator';
 import request from 'supertest';
-import { crearApp } from '../src/app.js';
+import { crearApp, type OpcionesApp } from '../src/app.js';
 import type { DB } from '../src/db/client.js';
 import * as schema from '../src/db/schema/index.js';
 import { crearAdminInicial } from '../src/db/crear-admin.js';
@@ -10,7 +10,7 @@ import { crearAdminInicial } from '../src/db/crear-admin.js';
 const ADMIN = { email: 'admin@prueba.bo', password: 'ClaveDePrueba123' };
 
 /** App completa sobre un Postgres embebido (PGlite) en memoria, migrado y con datos iniciales. */
-export async function entornoDePrueba() {
+export async function entornoDePrueba(opciones: OpcionesApp = { pagos: null }) {
   const cliente = new PGlite();
   const pglite = drizzle(cliente, { schema, casing: 'snake_case' });
   await migrate(pglite, { migrationsFolder: 'drizzle' });
@@ -21,7 +21,7 @@ export async function entornoDePrueba() {
     password: ADMIN.password,
     sucursal: { nombre: 'Casa matriz', codigo: 'MAT' },
   }))!;
-  const app = crearApp(db);
+  const app = crearApp(db, opciones);
 
   const login = async (email: string, password: string) => {
     const r = await request(app).post('/api/v1/auth/login').send({ email, password });

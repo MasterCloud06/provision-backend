@@ -5,3 +5,4 @@ export * from './clientes.js';
 export * from './ventas.js';
 export * from './finanzas.js';
 export * from './auditoria.js';
+export * from './tienda.js';

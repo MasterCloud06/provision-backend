@@ -69,6 +69,10 @@ export const productos = pgTable(
     stockMinimo: integer().notNull().default(0),
     /** false para servicios (consulta, montaje) que no llevan existencias. */
     controlaStock: boolean().notNull().default(true),
+    /** Foto para la tienda web (URL pública). */
+    imagenUrl: text(),
+    /** Si aparece en la tienda web para los clientes. */
+    visibleTienda: boolean().notNull().default(true),
     activo: boolean().notNull().default(true),
     ...timestamps,
   },

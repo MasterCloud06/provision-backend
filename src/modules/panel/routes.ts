@@ -6,6 +6,7 @@ import {
   clientes,
   eventos,
   historialTrabajo,
+  pedidosWeb,
   ordenesTrabajo,
   pagos,
   productos,
@@ -18,7 +19,7 @@ import {
 import { finDia, hoy, inicioDia } from '../../lib/fechas.js';
 import { GUIA_ROLES } from '../../lib/guia-roles.js';
 import { usuarioDe, type UsuarioSesion } from '../../lib/http.js';
-import { NOMBRE_ROL } from '../../lib/permisos.js';
+import { NOMBRE_ROL, tienePermiso } from '../../lib/permisos.js';
 import { resumenSesion } from '../caja/servicio.js';
 
 type Urgencia = 'ALTA' | 'MEDIA' | 'INFO' | 'OK';
@@ -302,6 +303,29 @@ async function armarPanel(db: DB, u: UsuarioSesion) {
         { titulo: 'Terminadas por ti hoy', valor: String(terminadas) },
       );
       break;
+    }
+  }
+
+  // Tienda web: pedidos que esperan al personal (pagados por preparar, o "pago al retirar").
+  if (tienePermiso(u.rol, 'tienda.gestionar')) {
+    const [porAtender] = await db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(pedidosWeb)
+      .where(
+        and(
+          u.sucursalId ? eq(pedidosWeb.sucursalId, u.sucursalId) : undefined,
+          sql`(${pedidosWeb.estado} in ('PAGADO', 'PREPARANDO') or (${pedidosWeb.estado} = 'PENDIENTE_PAGO' and ${pedidosWeb.metodoPago} = 'EN_TIENDA'))`,
+        ),
+      );
+    if (porAtender!.n > 0) {
+      tarea({
+        clave: 'pedidos-web',
+        titulo: plural(porAtender!.n, 'pedido web por preparar', 'pedidos web por preparar'),
+        detalle: 'Clientes que compraron en la tienda en línea: prepara sus productos y avísales.',
+        cantidad: porAtender!.n,
+        urgencia: 'ALTA',
+        pantalla: null,
+      });
     }
   }
 

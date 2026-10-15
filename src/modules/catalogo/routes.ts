@@ -37,6 +37,10 @@ const productoEsquema = z.object({
   precioVenta: centavos,
   stockMinimo: z.number().int().nonnegative(),
   controlaStock: z.boolean().optional(),
+  /** Foto para la tienda web: una URL https pública. */
+  imagenUrl: z.url({ protocol: /^https?$/ }).max(500).nullish(),
+  /** Si se muestra en la tienda web. */
+  visibleTienda: z.boolean().optional(),
   activo: z.boolean().optional(),
 });
 
@@ -142,6 +146,8 @@ export function rutasCatalogo(db: DB) {
         costoPromedio: productos.costoPromedio,
         stockMinimo: productos.stockMinimo,
         controlaStock: productos.controlaStock,
+        imagenUrl: productos.imagenUrl,
+        visibleTienda: productos.visibleTienda,
         activo: productos.activo,
         stock: cantidad,
         ubicacion: stock.ubicacion,

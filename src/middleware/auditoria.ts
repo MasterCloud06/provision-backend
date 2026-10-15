@@ -95,6 +95,18 @@ const REGLAS: Record<string, { modulo: string; titulo: string; detalle?: (r: Cue
     detalle: (r, b) => `Anuló la venta ${r.venta?.numero}: ${b.motivo}`,
   },
 
+  'POST /pedidos-web/:id/estado': {
+    modulo: 'tienda',
+    titulo: 'Atender pedido web',
+    detalle: (r) => `Pedido web ${r.numero} → ${r.estado}`,
+  },
+  'POST /pedidos-web/:id/cancelar': {
+    modulo: 'tienda',
+    titulo: 'Cancelar pedido web',
+    detalle: (r) => `Canceló el pedido web ${r.numero} (${bs(r.total)}): ${r.canceladoMotivo ?? ''}`,
+  },
+  'POST /pedidos-web/:id/notas': { modulo: 'tienda', titulo: 'Notas de pedido web', detalle: (r) => `Anotó en el pedido web ${r.numero}` },
+
   'PATCH /ordenes-trabajo/:id': { modulo: 'laboratorio', titulo: 'Editar orden', detalle: (r) => `Editó la orden ${r.numero}` },
   'POST /ordenes-trabajo/:id/estado': {
     modulo: 'laboratorio',
@@ -131,7 +143,8 @@ export function auditoria(db: DB): RequestHandler {
   return (req, res, next) => {
     if (!['POST', 'PATCH', 'PUT', 'DELETE'].includes(req.method)) return next();
     const { ruta, entidadId } = normalizar(req.originalUrl);
-    if (ruta.startsWith('/finanzas')) return next();
+    // Finanzas personales: privadas. Tienda: acciones de clientes, no del personal.
+    if (ruta.startsWith('/finanzas') || ruta.startsWith('/tienda')) return next();
 
     const clave = `${req.method} ${ruta}`;
     const regla = REGLAS[clave] ?? { modulo: ruta.split('/')[1] ?? 'otro', titulo: clave };

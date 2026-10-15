@@ -3,6 +3,8 @@ import { crearApp } from './app.js';
 import { env } from './config/env.js';
 import { crearDb } from './db/client.js';
 import { asegurarSuperadmin } from './db/superadmin.js';
+import { pasarelaDesdeEntorno } from './lib/pagos.js';
+import { liberarVencidos } from './modules/tienda/servicio.js';
 
 const { db, cerrar } = crearDb(env.DATABASE_URL, env.DATABASE_SSL);
 
@@ -17,7 +19,18 @@ if (env.APP_ENV !== 'local') {
 const ascendido = await asegurarSuperadmin(db);
 if (ascendido) console.log(`[${env.APP_ENV}] ${ascendido} ahora es super administrador`);
 
-const servidor = crearApp(db).listen(env.PORT, () => {
+const pagos = pasarelaDesdeEntorno();
+console.log(`[${env.APP_ENV}] Tienda web: ${pagos ? `pago con Stripe activo (${env.STRIPE_MONEDA})` : 'Stripe sin configurar, solo pago al retirar'}`);
+
+// Cada 5 minutos devuelve al inventario el stock de pedidos que no se pagaron a tiempo.
+const limpieza = setInterval(() => {
+  liberarVencidos(db, pagos)
+    .then((n) => n && console.log(`[tienda] ${n} pedido(s) sin pagar cancelados; el stock volvió a la venta`))
+    .catch((err) => console.error('[tienda] error al liberar pedidos vencidos', err));
+}, 5 * 60_000);
+limpieza.unref();
+
+const servidor = crearApp(db, { pagos }).listen(env.PORT, () => {
   console.log(`[${env.APP_ENV}] Provisión API escuchando en el puerto ${env.PORT}`);
 });
 

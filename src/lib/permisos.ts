@@ -39,6 +39,8 @@ export const PERMISOS = [
   'laboratorio.entregar',
   'laboratorio.cancelar',
   'reportes.ver',
+  /** Atender los pedidos de la tienda web: prepararlos, entregarlos o cancelarlos. */
+  'tienda.gestionar',
 ] as const;
 
 export type Permiso = (typeof PERMISOS)[number];
@@ -80,6 +82,7 @@ export const PERMISOS_POR_ROL: Record<Rol, readonly Permiso[]> = {
     'caja.operar',
     'laboratorio.ver',
     'laboratorio.entregar',
+    'tienda.gestionar',
   ],
 
   /** Ejecutivo de ventas (asesor): atiende y arma la venta; el cobro lo hace caja. */
@@ -92,6 +95,7 @@ export const PERMISOS_POR_ROL: Record<Rol, readonly Permiso[]> = {
     'ventas.crear',
     'laboratorio.ver',
     'laboratorio.entregar',
+    'tienda.gestionar',
   ],
 
   /** Optometrista: clientes y graduaciones. */

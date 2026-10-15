@@ -89,8 +89,8 @@ Las rutas piden **permisos**, no roles. Cada rol es un paquete de permisos defin
 | `SUPERADMIN` | Super administrador | **Absolutamente todo.** Exclusivo: auditoría (registro de eventos) y crear o modificar administradores y super administradores |
 | `ADMIN` | Administrador | Todo lo demás: usuarios (no administradores), sucursales, otras sucursales, retiros del dueño |
 | `ENCARGADO` | Encargado de sucursal | Todo lo operativo: catálogo, inventario (ajustes incluidos), anular ventas, cambiar precios, caja, laboratorio, reportes |
-| `CAJERO` | Cajero | Caja (abrir, cerrar, gastos), vender y cobrar, cobrar saldos, entregar lentes pagados |
-| `VENDEDOR` | Ejecutivo de ventas | Clientes y ventas **sin cobro**: la venta queda con saldo y la cobra caja. Entrega lentes pagados |
+| `CAJERO` | Cajero | Caja (abrir, cerrar, gastos), vender y cobrar, cobrar saldos, entregar lentes pagados, pedidos web |
+| `VENDEDOR` | Ejecutivo de ventas | Clientes y ventas **sin cobro**: la venta queda con saldo y la cobra caja. Entrega lentes pagados, pedidos web |
 | `OPTOMETRISTA` | Optometrista | Clientes y recetas |
 | `LABORATORIO` | Laboratorio | Órdenes de trabajo: pendiente → en laboratorio → listo |
 
@@ -192,6 +192,41 @@ Reglas: numeración correlativa por sucursal (`V-MAT-000001`, `OT-MAT-000001`); 
 
 **Puente negocio → bolsillo:** un `RETIRO_DUENO` de caja con `cuentaPersonalId` crea automáticamente el ingreso en la cuenta personal (categoría "Retiros del negocio"). Así el dueño ve cuánto vive del negocio sin mezclar las cuentas. Esas transacciones solo se corrigen desde la caja.
 
+### Tienda web (clientes)
+
+Lo que usa [`provision-frontend`](https://github.com/MasterCloud06/provision-frontend). Los clientes tienen **su propia cuenta** (`cuentas_tienda`), separada del personal: su token lleva la audiencia `tienda` y el sistema interno lo rechaza. Al registrarse se crea su ficha en `clientes`, así el personal lo ve como a cualquier cliente.
+
+- Público: `GET /tienda/info` (sucursal, costo de envío, si hay pago en línea, categorías, marcas) · `GET /tienda/productos` (filtros `q`, `tipo`, `marcaId`, `genero`, `precioMin`, `precioMax`, `disponibles`, `orden`) · `GET /tienda/productos/:id` (con relacionados)
+- Cuenta: `POST /tienda/auth/registro` · `POST /tienda/auth/login` · `GET|PATCH /tienda/cuenta` · `POST /tienda/cuenta/password`
+- Carrito (en el servidor): `GET /tienda/carrito` · `PUT /tienda/carrito/:productoId` `{ cantidad }` (0 quita) · `DELETE /tienda/carrito[/:productoId]` · `POST /tienda/carrito/fusionar` (lo que armó sin sesión)
+- Pedidos: `POST /tienda/pedidos` `{ entrega: RETIRO|ENVIO, metodoPago: STRIPE|EN_TIENDA, … }` → `{ pedido, urlPago }` · `GET /tienda/pedidos[/:id]` · `POST /tienda/pedidos/:id/pagar` · `/verificar` · `/cancelar`
+- Webhook: `POST /tienda/stripe/webhook`
+
+Los clientes solo ven productos **activos** y con `visibleTienda = true` (por defecto todos), sin costos ni proveedores. Cada producto admite `imagenUrl` (una URL https) para la foto. El stock que se vende en línea es el de la sucursal `TIENDA_SUCURSAL_CODIGO` (o la primera).
+
+**Reglas del pedido:** al confirmar, el stock se **reserva** (sale del inventario con el kardex `Pedido web W-MAT-000001`) y el carrito se vacía. Con tarjeta, el cliente paga en la página de **Stripe Checkout** (los datos de la tarjeta nunca pasan por nuestro servidor); si no paga en `TIENDA_MINUTOS_RESERVA` minutos, el pedido se cancela y el stock vuelve. Con *pago al retirar* la reserva dura `TIENDA_DIAS_RETIRO` días o hasta que el personal lo toma. El pago se confirma por el **webhook** de Stripe y, como respaldo, cuando el navegador vuelve de Stripe (`/verificar`). Si un pago llega después de vencida la reserva, se confirma igual y se reserva de nuevo (o queda una nota para el personal si ya no hay stock).
+
+### Pedidos web (personal)
+- `GET /pedidos-web?estado=POR_ATENDER|…&q=` · `GET /pedidos-web/:id` (con `siguientes`: los estados posibles)
+- `POST /pedidos-web/:id/estado` — `PAGADO → PREPARANDO → LISTO` (retiro) o `ENVIADO` (envío) `→ ENTREGADO`. Con pago al retirar se cobra al entregar.
+- `POST /pedidos-web/:id/cancelar` `{ motivo }` — devuelve el stock y, si se pagó con tarjeta, **reembolsa en Stripe**
+- `POST /pedidos-web/:id/notas` — notas internas (el cliente no las ve)
+
+Permiso `tienda.gestionar`: administradores, encargado, cajero y ejecutivo de ventas. "Mi panel" les avisa cuántos pedidos web hay por preparar.
+
+### Stripe
+
+Sin `STRIPE_SECRET_KEY` la tienda funciona igual, pero solo con **pago al retirar**. Para activar el pago con tarjeta:
+
+1. En el [dashboard de Stripe](https://dashboard.stripe.com/test/apikeys), en **modo de prueba**, copia la *Secret key* (`sk_test_…`).
+2. En **Developers → Webhooks → Add endpoint**: URL `https://TU-API/api/v1/tienda/stripe/webhook`, eventos `checkout.session.completed`, `checkout.session.expired`, `checkout.session.async_payment_succeeded` y `checkout.session.async_payment_failed`. Copia el *Signing secret* (`whsec_…`).
+3. En Render (*Environment*): `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` y `TIENDA_URL` (la dirección de la tienda). Agrega también la tienda a `CORS_ORIGIN`.
+4. Prueba con la tarjeta `4242 4242 4242 4242`, cualquier fecha futura y cualquier CVC. Para producción, cambia a las llaves `sk_live_…` y crea el webhook en modo *live*.
+
+Para probar el webhook en local: `stripe listen --forward-to localhost:3000/api/v1/tienda/stripe/webhook` (Stripe CLI) y usa el `whsec_…` que imprime. Sin webhook también funciona: la tienda verifica el pago al volver de Stripe.
+
+`STRIPE_MONEDA` es `bob` por defecto (bolivianos, sin conversión). Si tu cuenta de Stripe cobra en otra moneda, por ejemplo `usd`, define `STRIPE_TIPO_CAMBIO` (bolivianos por dólar, p. ej. `6.96`) y los precios se convierten al crear el pago.
+
 ### Reportes
 - `GET /reportes/dashboard?desde&hasta` — ventas de hoy y del periodo, ticket promedio, margen bruto (a costo promedio), cuentas por cobrar, órdenes por estado, productos bajo stock, top productos, ventas por día y por vendedor
 
@@ -218,3 +253,4 @@ Para cambiar el esquema: edita `src/db/schema`, luego `npm run db:generate`, `np
 - Devoluciones parciales y cambios de producto
 - Recordatorios a clientes (control anual, lentes listos) por WhatsApp
 - Exportación de reportes a Excel/PDF
+- Tienda: recuperar contraseña por correo, correos de confirmación, y llevar los pedidos web a los reportes de ventas

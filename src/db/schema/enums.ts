@@ -82,3 +82,20 @@ export const tipoTransaccionPersonal = pgEnum('tipo_transaccion_personal', [
   'GASTO',
   'TRANSFERENCIA',
 ]);
+
+/* ─────────────────────────── Tienda web ─────────────────────────── */
+
+export const estadoPedidoWeb = pgEnum('estado_pedido_web', [
+  'PENDIENTE_PAGO', // creado; el stock queda reservado mientras se paga
+  'PAGADO',
+  'PREPARANDO',
+  'LISTO', // listo para retirar en tienda
+  'ENVIADO', // en camino al domicilio
+  'ENTREGADO',
+  'CANCELADO', // el stock reservado vuelve al inventario
+]);
+
+export const entregaPedidoWeb = pgEnum('entrega_pedido_web', ['RETIRO', 'ENVIO']);
+
+/** STRIPE = tarjeta en línea; EN_TIENDA = paga al retirar. */
+export const metodoPagoWeb = pgEnum('metodo_pago_web', ['STRIPE', 'EN_TIENDA']);

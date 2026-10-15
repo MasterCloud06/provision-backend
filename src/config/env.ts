@@ -15,6 +15,26 @@ const comun = z.object({
   ADMIN_PASSWORD: z.string().min(8).optional(),
   SUCURSAL_NOMBRE: z.string().default('Casa matriz'),
   SUCURSAL_CODIGO: z.string().regex(/^[A-Z0-9]{2,10}$/).default('MAT'),
+
+  /* Tienda web */
+  /** Dirección pública de la tienda (sin / al final): Stripe vuelve aquí después de pagar. */
+  TIENDA_URL: z.url().transform((u) => u.replace(/\/+$/, '')).default('http://localhost:5173'),
+  /** Código de la sucursal que despacha los pedidos web. Por defecto, la primera sucursal activa. */
+  TIENDA_SUCURSAL_CODIGO: z.string().optional(),
+  /** Costo de envío a domicilio en centavos (Bs 20 = 2000). */
+  TIENDA_COSTO_ENVIO: z.coerce.number().int().nonnegative().default(2000),
+  /** Minutos que se reserva el stock de un pedido mientras el cliente paga con tarjeta. */
+  TIENDA_MINUTOS_RESERVA: z.coerce.number().int().min(30).max(1440).default(30),
+  /** Días que se guarda el stock de un pedido "pago al retirar" antes de cancelarlo. */
+  TIENDA_DIAS_RETIRO: z.coerce.number().int().min(1).max(30).default(3),
+
+  /* Stripe: sin STRIPE_SECRET_KEY la tienda funciona, pero solo con pago al retirar. */
+  STRIPE_SECRET_KEY: z.string().startsWith('sk_').optional(),
+  STRIPE_WEBHOOK_SECRET: z.string().startsWith('whsec_').optional(),
+  /** Moneda del cobro en Stripe (minúsculas). bob = bolivianos, sin conversión. */
+  STRIPE_MONEDA: z.string().regex(/^[a-z]{3}$/).default('bob'),
+  /** Bolivianos por 1 unidad de STRIPE_MONEDA (solo si no es bob). Ej.: 6.96 para usd. */
+  STRIPE_TIPO_CAMBIO: z.coerce.number().positive().default(1),
 });
 
 /** Local: valores cómodos por defecto para levantar todo con docker compose. */
