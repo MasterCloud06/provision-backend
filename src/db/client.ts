@@ -10,8 +10,8 @@ export type Tx = Parameters<Parameters<DB['transaction']>[0]>[0];
 /** Una conexión o una transacción en curso: los servicios aceptan ambas. */
 export type Exec = DB | Tx;
 
-export function crearDb(url: string): { db: DB; cerrar: () => Promise<void> } {
-  const pool = new pg.Pool({ connectionString: url });
+export function crearDb(url: string, ssl = false): { db: DB; cerrar: () => Promise<void> } {
+  const pool = new pg.Pool({ connectionString: url, ssl: ssl ? { rejectUnauthorized: false } : undefined });
   const db = drizzle(pool, { schema, casing: 'snake_case' }) as unknown as DB;
   return { db, cerrar: () => pool.end() };
 }

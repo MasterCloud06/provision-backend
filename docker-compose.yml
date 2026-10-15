@@ -1,14 +1,28 @@
+# Base de datos del entorno LOCAL: PostgreSQL 18.6
+#   docker compose up -d      → levanta
+#   docker compose down       → detiene (los datos se conservan)
+#   docker compose down -v    → detiene y BORRA los datos
 services:
   db:
-    image: postgres:17-alpine
+    image: postgres:18.6-alpine
+    container_name: provision-db-local
+    restart: unless-stopped
     environment:
       POSTGRES_USER: provision
       POSTGRES_PASSWORD: provision
       POSTGRES_DB: provision
+      TZ: America/La_Paz
+      PGTZ: America/La_Paz
     ports:
-      - "5432:5432"
+      - "${DB_PORT:-5432}:5432"
     volumes:
-      - provision-db:/var/lib/postgresql/data
+      # Desde PostgreSQL 18 el volumen se monta en /var/lib/postgresql (no en .../data)
+      - provision-db-local:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U provision -d provision"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
 volumes:
-  provision-db:
+  provision-db-local:

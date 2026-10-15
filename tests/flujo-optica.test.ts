@@ -14,12 +14,7 @@ describe('flujo completo de la óptica', () => {
 
   beforeAll(async () => {
     e = await entornoDePrueba();
-    const productos = (await e.admin.get('/catalogo/productos?porPagina=50')).body.datos as {
-      id: string;
-      sku: string;
-      stock: number;
-    }[];
-    for (const p of productos) ids[p.sku] = p.id;
+    Object.assign(ids, await e.prepararCatalogo());
   });
   afterAll(() => e.cerrar());
 

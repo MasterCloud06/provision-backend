@@ -2,21 +2,62 @@
 
 API para ópticas: **inventario, caja, ventas y finanzas personales** del dueño, pensada para el día a día real de una óptica en Bolivia: lentes que se encargan con anticipo, órdenes de laboratorio, cobros en efectivo/QR/tarjeta y arqueo de caja por turno.
 
-**Stack:** Node 20+ · TypeScript · Express 5 · PostgreSQL · Drizzle ORM · Zod · JWT. Los tests corren sobre un Postgres embebido (PGlite), sin instalar nada.
+**Stack:** Node 20+ · TypeScript · Express 5 · PostgreSQL 18.6 · Drizzle ORM · Zod · JWT. Los tests corren sobre un Postgres embebido (PGlite), sin instalar nada.
 
-## Puesta en marcha
+## Entornos
+
+El proyecto tiene dos entornos de trabajo. Cada uno lee su propio archivo de configuración y apunta a su propia base de datos, así nunca se mezclan los datos.
+
+| | **Local** | **Desarrollo** |
+|---|---|---|
+| Para qué | Programar y probar en tu computadora | Servidor compartido para probar antes de producción |
+| Configuración | `.env.local` | `.env.desarrollo` |
+| Base de datos | PostgreSQL 18.6 en Docker (`docker-compose.yml`) | PostgreSQL 18.6 del servidor, con SSL |
+| Valores por defecto | Sí, funciona casi sin configurar | No: si falta algo, no arranca y dice qué falta |
+| CORS | `http://localhost:5173` | Solo los orígenes que indiques (no acepta `*`) |
+
+El entorno se elige con la variable `APP_ENV` (`local` por defecto). Los scripts ya la ponen; no hace falta escribirla. Los archivos `.env.*` reales están en `.gitignore`: solo se versionan los `.example`.
+
+### Local
 
 ```bash
-cp .env.example .env          # ajusta JWT_SECRET y la contraseña del admin
-docker compose up -d          # Postgres 17 en localhost:5432
+cp .env.local.example .env.local
 npm install
-npm run db:migrate            # crea las tablas
-npm run db:seed               # sucursal "Casa matriz", admin y productos de ejemplo
-npm run dev                   # http://localhost:3000/api/v1
-npm test                      # flujo completo de punta a punta
+npm run db:levantar          # PostgreSQL 18.6 en Docker (puerto 5432)
+npm run db:migrate           # crea las tablas, vacías
+npm run db:crear-admin       # solo la primera sucursal y el usuario admin
+npm run dev                  # http://localhost:3000/api/v1
 ```
 
-Ingreso inicial: `admin@provision.bo` / `Provision2026!` (cámbialo con `POST /auth/cambiar-password`).
+### Desarrollo
+
+```bash
+cp .env.desarrollo.example .env.desarrollo   # completa DATABASE_URL, JWT_SECRET, CORS_ORIGIN, admin
+npm run db:migrate:desarrollo
+npm run db:crear-admin:desarrollo
+npm run build && npm run start:desarrollo    # o npm run dev:desarrollo para recargar al editar
+```
+
+En el servidor también puedes definir las variables en el sistema en vez del archivo: las del sistema tienen prioridad.
+
+### Base de datos vacía
+
+La base arranca **sin datos**. `db:crear-admin` crea únicamente la primera sucursal y el administrador para poder ingresar, y no hace nada si ya hay usuarios. Productos, clientes y demás se cargan desde la aplicación.
+
+### Comandos
+
+| Comando | Local | Desarrollo |
+|---|---|---|
+| Servidor con recarga | `npm run dev` | `npm run dev:desarrollo` |
+| Servidor compilado | `npm start` | `npm run start:desarrollo` |
+| Aplicar migraciones | `npm run db:migrate` | `npm run db:migrate:desarrollo` |
+| Crear admin inicial | `npm run db:crear-admin` | `npm run db:crear-admin:desarrollo` |
+| Explorar la base | `npm run db:studio` | `npm run db:studio:desarrollo` |
+| Levantar / detener Postgres | `npm run db:levantar` / `db:detener` | — |
+
+Otros: `npm test`, `npm run typecheck`, `npm run db:generate` (genera una migración tras cambiar el esquema; siempre se genera en local y luego se aplica en cada entorno).
+
+`GET /salud` responde qué entorno está corriendo.
 
 ## Convenciones
 
@@ -100,7 +141,7 @@ Reglas: numeración correlativa por sucursal (`V-MAT-000001`, `OT-MAT-000001`); 
 src/
   app.ts               # arma Express y monta los módulos
   db/schema/           # tablas Drizzle (core, inventario, clientes, ventas+caja, finanzas)
-  db/seed.ts           # datos iniciales idempotentes
+  db/crear-admin.ts    # primera sucursal + administrador (sin datos de ejemplo)
   lib/                 # errores, validación, fechas, correlativos
   middleware/          # autenticación/roles y manejo de errores
   modules/<módulo>/    # routes.ts (HTTP) + servicio.ts (reglas de negocio transaccionales)
@@ -108,7 +149,7 @@ drizzle/               # migraciones SQL generadas
 tests/                 # flujo completo sobre PGlite
 ```
 
-Para cambiar el esquema: edita `src/db/schema`, luego `npm run db:generate` y `npm run db:migrate`.
+Para cambiar el esquema: edita `src/db/schema`, luego `npm run db:generate`, `npm run db:migrate` y, cuando esté listo, `npm run db:migrate:desarrollo`.
 
 ## Pendiente / siguientes pasos
 

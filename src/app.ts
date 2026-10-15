@@ -21,10 +21,10 @@ export function crearApp(db: DB) {
   app.use(helmet());
   app.use(cors({ origin: env.CORS_ORIGIN === '*' ? true : env.CORS_ORIGIN.split(',') }));
   app.use(express.json({ limit: '1mb' }));
-  if (env.NODE_ENV !== 'test') app.use(morgan('dev'));
+  if (env.LOG_HTTP) app.use(morgan(env.APP_ENV === 'local' ? 'dev' : 'combined'));
 
   app.get('/salud', (_req, res) => {
-    res.json({ ok: true, servicio: 'provision-backend' });
+    res.json({ ok: true, servicio: 'provision-backend', entorno: env.APP_ENV });
   });
 
   const api = Router();
