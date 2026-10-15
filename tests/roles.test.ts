@@ -40,7 +40,7 @@ describe('roles y permisos', () => {
     expect(me.permisos).not.toContain('ventas.anular');
     const roles = (await u.CAJERO!.get('/auth/roles')).body;
     expect(roles.map((r: { rol: string }) => r.rol)).toEqual([
-      'ADMIN', 'ENCARGADO', 'CAJERO', 'VENDEDOR', 'OPTOMETRISTA', 'LABORATORIO',
+      'SUPERADMIN', 'ADMIN', 'ENCARGADO', 'CAJERO', 'VENDEDOR', 'OPTOMETRISTA', 'LABORATORIO',
     ]);
   });
 

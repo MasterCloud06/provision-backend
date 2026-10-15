@@ -1,5 +1,5 @@
 /**
- * Crea lo mínimo para poder ingresar: la primera sucursal y el usuario administrador.
+ * Crea lo mínimo para poder ingresar: la primera sucursal y el super administrador (el dueño).
  * No carga productos, clientes ni ningún otro dato. Si ya hay usuarios, no hace nada.
  *
  *   npm run db:crear-admin                 (entorno local)
@@ -31,7 +31,7 @@ export async function crearAdminInicial(db: DB, datos: DatosAdmin) {
         nombre: datos.nombre,
         email: datos.email.toLowerCase(),
         passwordHash: await bcrypt.hash(datos.password, 10),
-        rol: 'ADMIN',
+        rol: 'SUPERADMIN',
         sucursalId: sucursal!.id,
       })
       .returning();

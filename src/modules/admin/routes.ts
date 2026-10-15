@@ -4,9 +4,9 @@ import { Router } from 'express';
 import { z } from 'zod';
 import type { DB } from '../../db/client.js';
 import { sucursales, usuarios } from '../../db/schema/index.js';
-import { noAutorizado, noEncontrado, reglaNegocio } from '../../lib/errors.js';
+import { noAutorizado, noEncontrado, prohibido, reglaNegocio } from '../../lib/errors.js';
 import { body, param, usuarioDe } from '../../lib/http.js';
-import { NOMBRE_ROL, PERMISOS_POR_ROL, ROLES, type Rol } from '../../lib/permisos.js';
+import { NOMBRE_ROL, PERMISOS_POR_ROL, ROLES, ROLES_PROTEGIDOS, tienePermiso, type Rol } from '../../lib/permisos.js';
 import { autenticar, firmarToken, requierePermiso } from '../../middleware/auth.js';
 import { crearCategoriasPorDefecto } from '../finanzas/servicio.js';
 
@@ -47,8 +47,17 @@ export function rutasAuth(db: DB) {
   });
 
   /** Roles disponibles con su nombre y permisos (para formularios y para documentar). */
-  r.get('/roles', autenticar(db), (_req, res) => {
-    res.json(ROLES.map((rol) => ({ rol, nombre: NOMBRE_ROL[rol], permisos: PERMISOS_POR_ROL[rol] })));
+  r.get('/roles', autenticar(db), (req, res) => {
+    const yo = usuarioDe(req);
+    res.json(
+      ROLES.map((rol) => ({
+        rol,
+        nombre: NOMBRE_ROL[rol],
+        permisos: PERMISOS_POR_ROL[rol],
+        // Si quien pregunta puede asignar este rol a otro usuario.
+        asignable: !ROLES_PROTEGIDOS.includes(rol) || tienePermiso(yo.rol, 'usuarios.administradores'),
+      })),
+    );
   });
 
   r.post('/cambiar-password', autenticar(db), async (req, res) => {
@@ -85,8 +94,16 @@ export function rutasUsuarios(db: DB) {
     res.json(filas.map((u) => ({ ...u, nombreRol: NOMBRE_ROL[u.rol] })));
   });
 
+  /** Solo el super administrador crea o modifica administradores y super administradores. */
+  const exigirSobreProtegidos = (yo: Rol, ...roles: (Rol | undefined)[]) => {
+    if (roles.some((r) => r && ROLES_PROTEGIDOS.includes(r)) && !tienePermiso(yo, 'usuarios.administradores')) {
+      throw prohibido('Solo el super administrador gestiona cuentas de administrador');
+    }
+  };
+
   r.post('/', async (req, res) => {
     const { password, ...datos } = body(req, usuarioEsquema.extend({ rol: usuarioEsquema.shape.rol.default('VENDEDOR') }));
+    exigirSobreProtegidos(usuarioDe(req).rol, datos.rol);
     const creado = await db.transaction(async (tx) => {
       const [u] = await tx
         .insert(usuarios)
@@ -106,15 +123,15 @@ export function rutasUsuarios(db: DB) {
     if (id === yo.id && (datos.activo === false || (datos.rol && datos.rol !== yo.rol))) {
       throw reglaNegocio('No puedes desactivarte ni cambiar tu propio rol');
     }
-    if (datos.activo === false || (datos.rol && datos.rol !== 'ADMIN')) {
+    const [actual] = await db.select({ rol: usuarios.rol }).from(usuarios).where(eq(usuarios.id, id));
+    if (!actual) throw noEncontrado('Usuario');
+    exigirSobreProtegidos(yo.rol, actual.rol, datos.rol);
+    if (actual.rol === 'SUPERADMIN' && (datos.activo === false || (datos.rol && datos.rol !== 'SUPERADMIN'))) {
       const [otros] = await db
         .select({ n: sql<number>`count(*)::int` })
         .from(usuarios)
-        .where(and(eq(usuarios.rol, 'ADMIN'), eq(usuarios.activo, true), ne(usuarios.id, id)));
-      const [actual] = await db.select({ rol: usuarios.rol }).from(usuarios).where(eq(usuarios.id, id));
-      if (actual?.rol === 'ADMIN' && otros!.n === 0) {
-        throw reglaNegocio('Debe quedar al menos un administrador activo');
-      }
+        .where(and(eq(usuarios.rol, 'SUPERADMIN'), eq(usuarios.activo, true), ne(usuarios.id, id)));
+      if (otros!.n === 0) throw reglaNegocio('Debe quedar al menos un super administrador activo');
     }
     const [u] = await db
       .update(usuarios)

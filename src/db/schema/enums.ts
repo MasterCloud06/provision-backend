@@ -9,6 +9,15 @@ export const rolUsuario = pgEnum('rol_usuario', [
   'ENCARGADO',
   'CAJERO',
   'OPTOMETRISTA',
+  'SUPERADMIN',
+]);
+
+export const resultadoEvento = pgEnum('resultado_evento', [
+  'EXITO',
+  'DENEGADO', // sin permiso (403)
+  'RECHAZADO', // regla de negocio o conflicto (409/422)
+  'FALLIDO', // credenciales incorrectas
+  'ERROR', // error del servidor
 ]);
 
 export const tipoProducto = pgEnum('tipo_producto', [

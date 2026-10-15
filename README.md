@@ -86,7 +86,8 @@ Las rutas piden **permisos**, no roles. Cada rol es un paquete de permisos defin
 
 | Rol (`rol`) | Nombre | Qué hace |
 |---|---|---|
-| `ADMIN` | Administrador | Todo: usuarios, sucursales, otras sucursales, retiros del dueño |
+| `SUPERADMIN` | Super administrador | **Absolutamente todo.** Exclusivo: auditoría (registro de eventos) y crear o modificar administradores y super administradores |
+| `ADMIN` | Administrador | Todo lo demás: usuarios (no administradores), sucursales, otras sucursales, retiros del dueño |
 | `ENCARGADO` | Encargado de sucursal | Todo lo operativo: catálogo, inventario (ajustes incluidos), anular ventas, cambiar precios, caja, laboratorio, reportes |
 | `CAJERO` | Cajero | Caja (abrir, cerrar, gastos), vender y cobrar, cobrar saldos, entregar lentes pagados |
 | `VENDEDOR` | Ejecutivo de ventas | Clientes y ventas **sin cobro**: la venta queda con saldo y la cobra caja. Entrega lentes pagados |
@@ -95,7 +96,28 @@ Las rutas piden **permisos**, no roles. Cada rol es un paquete de permisos defin
 
 Todos tienen sus propias **finanzas personales**, privadas.
 
-Protecciones: nadie puede desactivarse ni cambiarse el rol a sí mismo, y siempre debe quedar al menos un administrador activo.
+Protecciones: nadie puede desactivarse ni cambiarse el rol a sí mismo; solo el super administrador gestiona cuentas de administrador; siempre debe quedar al menos un super administrador activo.
+
+El primer usuario (`db:crear-admin`) es super administrador. En bases creadas antes de este rol, al arrancar el servidor (o al migrar) el administrador activo más antiguo pasa a ser super administrador.
+
+## Registro de eventos (auditoría)
+
+Cada operación que modifica datos queda registrada en la tabla `eventos`: quién, con qué rol (foto del momento), sucursal, módulo, una descripción legible ("Registró la venta V-MAT-000012 por Bs 750,00") y el resultado:
+
+| Resultado | Cuándo |
+|---|---|
+| `EXITO` | La operación se hizo |
+| `DENEGADO` | No tenía permiso (403) |
+| `RECHAZADO` | Una regla de negocio la impidió (409/422), p. ej. caja ya abierta |
+| `FALLIDO` | Intento de ingreso con credenciales incorrectas |
+| `ERROR` | Falla del servidor |
+
+No se registran consultas (GET), errores de validación ni las **finanzas personales** (son privadas). Nunca se guardan contraseñas ni el cuerpo de las peticiones.
+
+- `GET /auditoria/resumen` — totales, actividad por rol (incluye roles sin actividad), por usuario, por módulo y por día, y últimos intentos negados
+- `GET /auditoria/eventos` — lista paginada; filtros `desde`, `hasta` (últimos 7 días por defecto), `rol`, `usuarioId`, `sucursalId`, `modulo`, `resultado`, `q`
+
+Solo con el permiso `auditoria.ver` (super administrador).
 
 ## Módulos y endpoints (`/api/v1`)
 

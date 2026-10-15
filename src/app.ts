@@ -5,8 +5,10 @@ import morgan from 'morgan';
 import { env } from './config/env.js';
 import type { DB } from './db/client.js';
 import { autenticar } from './middleware/auth.js';
+import { auditoria } from './middleware/auditoria.js';
 import { manejadorErrores, noEncontradoRuta } from './middleware/errores.js';
 import { rutasAuth, rutasSucursales, rutasUsuarios } from './modules/admin/routes.js';
+import { rutasAuditoria } from './modules/auditoria/routes.js';
 import { rutasCaja } from './modules/caja/routes.js';
 import { rutasCatalogo } from './modules/catalogo/routes.js';
 import { rutasClientes } from './modules/clientes/routes.js';
@@ -28,6 +30,8 @@ export function crearApp(db: DB) {
   });
 
   const api = Router();
+  // Registra cada operación que modifica datos (también intentos negados y logins fallidos).
+  api.use(auditoria(db));
   api.use('/auth', rutasAuth(db));
 
   // Todo lo que sigue requiere sesión
@@ -42,6 +46,7 @@ export function crearApp(db: DB) {
   api.use('/ordenes-trabajo', rutasOrdenesTrabajo(db));
   api.use('/finanzas', rutasFinanzas(db));
   api.use('/reportes', rutasReportes(db));
+  api.use('/auditoria', rutasAuditoria(db));
 
   app.use('/api/v1', api);
   app.use(noEncontradoRuta);

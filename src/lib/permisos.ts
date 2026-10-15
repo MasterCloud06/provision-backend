@@ -3,6 +3,10 @@
  * no roles, así un rol nuevo o un ajuste se hace solo aquí.
  */
 export const PERMISOS = [
+  /** Ver el registro de eventos (auditoría) de todos los roles. */
+  'auditoria.ver',
+  /** Crear y modificar cuentas de administrador y super administrador. */
+  'usuarios.administradores',
   'usuarios.gestionar',
   'sucursales.gestionar',
   /** Operar en una sucursal distinta a la propia. */
@@ -39,14 +43,28 @@ export const PERMISOS = [
 
 export type Permiso = (typeof PERMISOS)[number];
 
-export const ROLES = ['ADMIN', 'ENCARGADO', 'CAJERO', 'VENDEDOR', 'OPTOMETRISTA', 'LABORATORIO'] as const;
+export const ROLES = ['SUPERADMIN', 'ADMIN', 'ENCARGADO', 'CAJERO', 'VENDEDOR', 'OPTOMETRISTA', 'LABORATORIO'] as const;
 export type Rol = (typeof ROLES)[number];
 
-const SOLO_DUENO: Permiso[] = ['usuarios.gestionar', 'sucursales.gestionar', 'sucursales.todas', 'caja.retiro_dueno'];
+/** Lo que solo tiene el super administrador. */
+export const EXCLUSIVOS_SUPERADMIN: Permiso[] = ['auditoria.ver', 'usuarios.administradores'];
+const SOLO_DUENO: Permiso[] = [
+  ...EXCLUSIVOS_SUPERADMIN,
+  'usuarios.gestionar',
+  'sucursales.gestionar',
+  'sucursales.todas',
+  'caja.retiro_dueno',
+];
+
+/** Roles que solo puede asignar o modificar quien tiene 'usuarios.administradores'. */
+export const ROLES_PROTEGIDOS: Rol[] = ['SUPERADMIN', 'ADMIN'];
 
 export const PERMISOS_POR_ROL: Record<Rol, readonly Permiso[]> = {
-  /** Dueño: todo. */
-  ADMIN: PERMISOS,
+  /** Super administrador: absolutamente todo, incluida la auditoría y las cuentas de administradores. */
+  SUPERADMIN: PERMISOS,
+
+  /** Administrador (dueño/gerente general): todo menos auditoría y cuentas de administradores. */
+  ADMIN: PERMISOS.filter((p) => !EXCLUSIVOS_SUPERADMIN.includes(p)),
 
   /** Encargado de sucursal: todo lo operativo de su sucursal, sin usuarios ni retiros del dueño. */
   ENCARGADO: PERMISOS.filter((p) => !SOLO_DUENO.includes(p)),
@@ -84,6 +102,7 @@ export const PERMISOS_POR_ROL: Record<Rol, readonly Permiso[]> = {
 };
 
 export const NOMBRE_ROL: Record<Rol, string> = {
+  SUPERADMIN: 'Super administrador',
   ADMIN: 'Administrador',
   ENCARGADO: 'Encargado de sucursal',
   CAJERO: 'Cajero',
