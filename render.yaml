@@ -1,0 +1,34 @@
+# Blueprint de Render para el entorno de DESARROLLO.
+# En Render: New → Blueprint → elige este repo. Te pedirá los valores marcados con sync: false.
+services:
+  - type: web
+    name: provision-backend-dev
+    runtime: node
+    plan: free
+    # Debe ser la MISMA región de tu base de datos en Render; si no, la Internal Database URL no conecta.
+    region: virginia
+    branch: main
+    buildCommand: npm ci && npm run build
+    # Aplica las migraciones pendientes y luego arranca la API
+    startCommand: npm run start:render
+    healthCheckPath: /salud
+    envVars:
+      - key: APP_ENV
+        value: desarrollo
+      - key: NODE_VERSION
+        value: "22"
+      # Pega aquí la "Internal Database URL" de tu base en Render
+      - key: DATABASE_URL
+        sync: false
+      # La conexión interna de Render no usa SSL
+      - key: DATABASE_SSL
+        value: "false"
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: 8h
+      # URL del frontend de desarrollo (varias separadas por coma)
+      - key: CORS_ORIGIN
+        sync: false
+      - key: LOG_HTTP
+        value: "true"

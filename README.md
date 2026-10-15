@@ -40,6 +40,19 @@ npm run build && npm run start:desarrollo    # o npm run dev:desarrollo para rec
 
 En el servidor también puedes definir las variables en el sistema en vez del archivo: las del sistema tienen prioridad.
 
+#### Desarrollo en Render
+
+El entorno de desarrollo se despliega en Render con `render.yaml`:
+
+1. En Render: **New → Blueprint** y elige este repositorio.
+2. Cuando lo pida, completa:
+   - `DATABASE_URL` → la **Internal Database URL** de tu base en Render.
+   - `CORS_ORIGIN` → la URL del frontend de desarrollo (por ahora puede ser `http://localhost:5173`).
+3. `JWT_SECRET` lo genera Render solo. En cada despliegue se aplican las migraciones pendientes y luego arranca la API (`npm run start:render`).
+4. La región del servicio en `render.yaml` debe ser la misma que la de la base.
+
+Para trabajar contra esa base **desde tu computadora** (migraciones manuales, `db:crear-admin:desarrollo`, `db:studio:desarrollo`), en `.env.desarrollo` usa la **External Database URL** con `DATABASE_SSL=true`. La Internal solo funciona dentro de Render.
+
 ### Base de datos vacía
 
 La base arranca **sin datos**. `db:crear-admin` crea únicamente la primera sucursal y el administrador para poder ingresar, y no hace nada si ya hay usuarios. Productos, clientes y demás se cargan desde la aplicación.

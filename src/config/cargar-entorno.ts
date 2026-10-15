@@ -16,7 +16,8 @@ export function cargarEntorno(): Entorno {
   }
   const archivo = `.env.${app}`;
   if (existsSync(archivo)) config({ path: archivo, quiet: true });
-  else if (app !== 'test') {
+  // En un servidor (Render) las variables vienen del sistema y el archivo no hace falta.
+  else if (app !== 'test' && !process.env.DATABASE_URL) {
     console.warn(`[provision] No existe ${archivo}; copia ${archivo}.example y complétalo.`);
   }
   return app;
