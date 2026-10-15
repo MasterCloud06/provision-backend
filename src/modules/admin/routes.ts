@@ -6,6 +6,7 @@ import type { DB } from '../../db/client.js';
 import { sucursales, usuarios } from '../../db/schema/index.js';
 import { noAutorizado, noEncontrado, prohibido, reglaNegocio } from '../../lib/errors.js';
 import { body, param, usuarioDe } from '../../lib/http.js';
+import { GUIA_ROLES } from '../../lib/guia-roles.js';
 import { NOMBRE_ROL, PERMISOS_POR_ROL, ROLES, ROLES_PROTEGIDOS, tienePermiso, type Rol } from '../../lib/permisos.js';
 import { autenticar, firmarToken, requierePermiso } from '../../middleware/auth.js';
 import { crearCategoriasPorDefecto } from '../finanzas/servicio.js';
@@ -54,6 +55,8 @@ export function rutasAuth(db: DB) {
         rol,
         nombre: NOMBRE_ROL[rol],
         permisos: PERMISOS_POR_ROL[rol],
+        proposito: GUIA_ROLES[rol].proposito,
+        responsabilidades: GUIA_ROLES[rol].responsabilidades,
         // Si quien pregunta puede asignar este rol a otro usuario.
         asignable: !ROLES_PROTEGIDOS.includes(rol) || tienePermiso(yo.rol, 'usuarios.administradores'),
       })),

@@ -10,6 +10,7 @@ import { manejadorErrores, noEncontradoRuta } from './middleware/errores.js';
 import { rutasAuth, rutasSucursales, rutasUsuarios } from './modules/admin/routes.js';
 import { rutasAuditoria } from './modules/auditoria/routes.js';
 import { rutasCaja } from './modules/caja/routes.js';
+import { rutasPanel } from './modules/panel/routes.js';
 import { rutasCatalogo } from './modules/catalogo/routes.js';
 import { rutasClientes } from './modules/clientes/routes.js';
 import { rutasFinanzas } from './modules/finanzas/routes.js';
@@ -36,6 +37,7 @@ export function crearApp(db: DB) {
 
   // Todo lo que sigue requiere sesión
   api.use(autenticar(db));
+  api.use('/panel', rutasPanel(db));
   api.use('/usuarios', rutasUsuarios(db));
   api.use('/sucursales', rutasSucursales(db));
   api.use('/catalogo', rutasCatalogo(db));

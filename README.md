@@ -100,6 +100,23 @@ Protecciones: nadie puede desactivarse ni cambiarse el rol a sí mismo; solo el 
 
 El primer usuario (`db:crear-admin`) es super administrador. En bases creadas antes de este rol, al arrancar el servidor (o al migrar) el administrador activo más antiguo pasa a ser super administrador.
 
+## Mi panel (por rol)
+
+`GET /panel` — lo primero que ve cada usuario, armado según su rol con datos del momento:
+
+- **propósito** del rol y **responsabilidades** (definidos en `src/lib/guia-roles.ts`; también salen en `GET /auth/roles`);
+- **tareas** de "qué hacer ahora", ordenadas por urgencia (`ALTA`, `MEDIA`, `INFO`, `OK`), cada una con la `pantalla` donde se resuelve;
+- **indicadores** propios del rol.
+
+| Rol | Ejemplos de tareas |
+|---|---|
+| Super administrador | Intentos negados hoy · caja cerrada · órdenes atrasadas · productos por reponer |
+| Administrador / Encargado | Caja cerrada · órdenes atrasadas o que vencen hoy · productos por reponer · saldos por cobrar |
+| Cajero | Abrir caja · ventas que esperan cobro · lentes listos con saldo o para entregar · cerrar caja |
+| Ejecutivo de ventas | Clientes por avisar (lentes listos) · ventas suyas sin cobrar · órdenes suyas atrasadas |
+| Optometrista | Registrar recetas · clientes nuevos del día |
+| Laboratorio | Órdenes atrasadas · que vencen hoy · por empezar · en proceso |
+
 ## Registro de eventos (auditoría)
 
 Cada operación que modifica datos queda registrada en la tabla `eventos`: quién, con qué rol (foto del momento), sucursal, módulo, una descripción legible ("Registró la venta V-MAT-000012 por Bs 750,00") y el resultado:
