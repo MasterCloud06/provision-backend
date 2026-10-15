@@ -20,14 +20,18 @@ import { rutasOrdenesTrabajo, rutasVentas } from './modules/ventas/routes.js';
 import { rutasPedidosWeb } from './modules/pedidos-web/routes.js';
 import { rutasTienda, webhookStripe } from './modules/tienda/routes.js';
 import { pasarelaDesdeEntorno, type PasarelaPagos } from './lib/pagos.js';
+import { almacenDesdeEntorno, type AlmacenFotos } from './lib/fotos.js';
 
 export type OpcionesApp = {
   /** Pasarela de pagos; por defecto la de las variables de entorno (null si Stripe no está configurado). */
   pagos?: PasarelaPagos | null;
+  /** Dónde se guardan las fotos; por defecto Cloudinary si CLOUDINARY_URL está definida. */
+  fotos?: AlmacenFotos | null;
 };
 
 export function crearApp(db: DB, opciones: OpcionesApp = {}) {
   const pagos = opciones.pagos === undefined ? pasarelaDesdeEntorno() : opciones.pagos;
+  const fotos = opciones.fotos === undefined ? almacenDesdeEntorno() : opciones.fotos;
   const app = express();
   app.disable('x-powered-by');
   // Render (y cualquier proxy) pone la IP real del cliente en X-Forwarded-For.
@@ -55,7 +59,7 @@ export function crearApp(db: DB, opciones: OpcionesApp = {}) {
   api.use('/panel', rutasPanel(db));
   api.use('/usuarios', rutasUsuarios(db));
   api.use('/sucursales', rutasSucursales(db));
-  api.use('/catalogo', rutasCatalogo(db));
+  api.use('/catalogo', rutasCatalogo(db, fotos));
   api.use('/inventario', rutasInventario(db));
   api.use('/clientes', rutasClientes(db));
   api.use('/caja', rutasCaja(db));

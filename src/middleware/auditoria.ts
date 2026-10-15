@@ -37,6 +37,8 @@ const REGLAS: Record<string, { modulo: string; titulo: string; detalle?: (r: Cue
     titulo: 'Editar producto',
     detalle: (r, b) => (b.activo === true && Object.keys(b).length === 1 ? `Reactivó ${r.nombre}` : `Editó el producto ${r.nombre}`),
   },
+  'PUT /catalogo/productos/:id/foto': { modulo: 'catalogo', titulo: 'Subir foto de producto', detalle: (r) => `Cambió la foto de ${r.nombre}` },
+  'DELETE /catalogo/productos/:id/foto': { modulo: 'catalogo', titulo: 'Quitar foto de producto', detalle: (r) => `Quitó la foto de ${r.nombre}` },
   'DELETE /catalogo/productos/:id': { modulo: 'catalogo', titulo: 'Eliminar producto', detalle: (r) => r.mensaje },
   'POST /catalogo/marcas': { modulo: 'catalogo', titulo: 'Crear marca', detalle: (r) => `Creó la marca ${r.nombre}` },
   'PATCH /catalogo/marcas/:id': { modulo: 'catalogo', titulo: 'Editar marca', detalle: (r) => `Editó la marca ${r.nombre}` },

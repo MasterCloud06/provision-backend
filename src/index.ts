@@ -20,6 +20,7 @@ const ascendido = await asegurarSuperadmin(db);
 if (ascendido) console.log(`[${env.APP_ENV}] ${ascendido} ahora es super administrador`);
 
 const pagos = pasarelaDesdeEntorno();
+console.log(`[${env.APP_ENV}] Fotos de productos: ${env.CLOUDINARY_URL ? 'Cloudinary activo' : 'sin configurar (falta CLOUDINARY_URL)'}`);
 console.log(`[${env.APP_ENV}] Tienda web: ${pagos ? `pago con Stripe activo (${env.STRIPE_MONEDA})` : 'Stripe sin configurar, solo pago al retirar'}`);
 
 // Cada 5 minutos devuelve al inventario el stock de pedidos que no se pagaron a tiempo.

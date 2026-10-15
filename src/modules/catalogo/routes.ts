@@ -1,9 +1,10 @@
 import { and, asc, eq, ilike, or, sql, type SQL } from 'drizzle-orm';
-import { Router } from 'express';
+import express, { Router } from 'express';
 import { z } from 'zod';
 import type { DB } from '../../db/client.js';
 import { marcas, movimientosInventario, productos, proveedores, stock, tipoProducto, ventaItems } from '../../db/schema/index.js';
-import { noEncontrado } from '../../lib/errors.js';
+import { AppError, noEncontrado } from '../../lib/errors.js';
+import { esImagen, MAX_FOTO_BYTES, TIPOS_FOTO, type AlmacenFotos } from '../../lib/fotos.js';
 import { body, boolQuery, centavos, offset, paginacion, param, query, sucursalDe, usuarioDe } from '../../lib/http.js';
 import { requierePermiso } from '../../middleware/auth.js';
 import { moverStock } from '../inventario/servicio.js';
@@ -73,7 +74,7 @@ function crudSimple<T extends typeof marcas | typeof proveedores>(
   return r;
 }
 
-export function rutasCatalogo(db: DB) {
+export function rutasCatalogo(db: DB, fotos: AlmacenFotos | null = null) {
   const r = Router();
   r.use(requierePermiso('catalogo.ver'));
 
@@ -137,6 +138,7 @@ export function rutasCatalogo(db: DB) {
         sku: productos.sku,
         codigoBarras: productos.codigoBarras,
         nombre: productos.nombre,
+        descripcion: productos.descripcion,
         tipo: productos.tipo,
         modelo: productos.modelo,
         marcaId: productos.marcaId,
@@ -224,6 +226,48 @@ export function rutasCatalogo(db: DB) {
       .returning();
     if (!p) throw noEncontrado('Producto');
     res.json(p);
+  });
+
+  /**
+   * Foto del producto: el cuerpo es la imagen tal cual (Content-Type image/jpeg, png, webp o heic).
+   * Se guarda en Cloudinary y la URL queda en imagenUrl. Subir otra reemplaza la anterior.
+   */
+  r.put(
+    '/productos/:id/foto',
+    requierePermiso('catalogo.gestionar'),
+    express.raw({ type: 'image/*', limit: MAX_FOTO_BYTES }),
+    async (req, res) => {
+      const id = param(req);
+      if (!fotos) throw new AppError(503, 'FOTOS_NO_CONFIGURADAS', 'Las fotos todavía no están habilitadas: falta configurar Cloudinary en el servidor');
+      const tipo = String(req.headers['content-type'] ?? '').split(';')[0]!.trim().toLowerCase();
+      const imagen = req.body as unknown;
+      if (!(TIPOS_FOTO as readonly string[]).includes(tipo) || !Buffer.isBuffer(imagen) || !esImagen(imagen)) {
+        throw new AppError(415, 'FOTO_INVALIDA', 'La foto debe ser JPG, PNG, WEBP o HEIC');
+      }
+      const [p] = await db.select({ id: productos.id }).from(productos).where(eq(productos.id, id));
+      if (!p) throw noEncontrado('Producto');
+      let url: string;
+      try {
+        url = await fotos.subir(id, imagen, tipo);
+      } catch (err) {
+        console.error('[fotos] no se pudo subir', err);
+        throw new AppError(502, 'FOTO_NO_SUBIDA', 'No se pudo guardar la foto. Intenta de nuevo en un momento.');
+      }
+      const [actualizado] = await db.update(productos).set({ imagenUrl: url }).where(eq(productos.id, id)).returning();
+      res.json(actualizado);
+    },
+  );
+
+  r.delete('/productos/:id/foto', requierePermiso('catalogo.gestionar'), async (req, res) => {
+    const id = param(req);
+    const [p] = await db.select({ imagenUrl: productos.imagenUrl }).from(productos).where(eq(productos.id, id));
+    if (!p) throw noEncontrado('Producto');
+    // Si la foto estaba en Cloudinary se borra allá; si era un enlace externo solo se quita.
+    if (fotos && p.imagenUrl?.includes('res.cloudinary.com')) {
+      await fotos.borrar(id).catch((err) => console.error('[fotos] no se pudo borrar', err));
+    }
+    const [actualizado] = await db.update(productos).set({ imagenUrl: null }).where(eq(productos.id, id)).returning();
+    res.json(actualizado);
   });
 
   /**

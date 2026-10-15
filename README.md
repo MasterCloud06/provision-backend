@@ -147,6 +147,7 @@ Solo con el permiso `auditoria.ver` (super administrador).
 - `GET /catalogo/productos` — filtros `q` (nombre, SKU, modelo, código de barras exacto), `tipo`, `marcaId`, `activo`, `bajoStock`; incluye stock de la sucursal
 - `GET /catalogo/productos/:id` — ficha con existencias en todas las sucursales
 - `POST /catalogo/productos` — admite `stockInicial: { cantidad, costoUnitario }` · `PATCH /catalogo/productos/:id`
+- `PUT /catalogo/productos/:id/foto` — el cuerpo es la imagen (`Content-Type: image/jpeg`, png, webp o heic, hasta 12 MB); se guarda en **Cloudinary** y queda en `imagenUrl` · `DELETE /catalogo/productos/:id/foto`
 - `DELETE /catalogo/productos/:id` — borra si nunca tuvo movimientos ni ventas; si tiene historial, lo desactiva
 - Tipos: `MONTURA`, `LENTE_OFTALMICO`, `LENTE_CONTACTO`, `GAFAS_SOL`, `ACCESORIO`, `LIQUIDO`, `SERVICIO`. Atributos ópticos libres en `atributos` (género, material, forma, color, calibre/puente/varilla, índice, tratamiento…)
 
@@ -213,6 +214,10 @@ Los clientes solo ven productos **activos** y con `visibleTienda = true` (por de
 - `POST /pedidos-web/:id/notas` — notas internas (el cliente no las ve)
 
 Permiso `tienda.gestionar`: administradores, encargado, cajero y ejecutivo de ventas. "Mi panel" les avisa cuántos pedidos web hay por preparar.
+
+### Fotos (Cloudinary)
+
+Render borra los archivos subidos en cada reinicio, por eso las fotos van a **Cloudinary**. En su dashboard (*Settings → API Keys*) copia la **API environment variable** (`cloudinary://API_KEY:API_SECRET@CLOUD_NAME`) y ponla en Render como `CLOUDINARY_URL`. Las fotos se guardan en la carpeta `provision-dev/productos/` (o `provision-local/` desde tu PC), una por producto, reducidas a 1600 px como máximo. Sin `CLOUDINARY_URL` todo funciona, pero subir una foto responde que falta configurarlo.
 
 ### Stripe
 

@@ -35,6 +35,13 @@ const comun = z.object({
   STRIPE_MONEDA: z.string().regex(/^[a-z]{3}$/).default('bob'),
   /** Bolivianos por 1 unidad de STRIPE_MONEDA (solo si no es bob). Ej.: 6.96 para usd. */
   STRIPE_TIPO_CAMBIO: z.coerce.number().positive().default(1),
+
+  /* Cloudinary: fotos de productos. Es la "API environment variable" del dashboard:
+     cloudinary://API_KEY:API_SECRET@CLOUD_NAME. Sin ella, no se pueden subir fotos. */
+  CLOUDINARY_URL: z
+    .string()
+    .regex(/^cloudinary:\/\/[^:]+:[^@]+@[^/?#]+$/, 'Debe tener la forma cloudinary://API_KEY:API_SECRET@CLOUD_NAME')
+    .optional(),
 });
 
 /** Local: valores cómodos por defecto para levantar todo con docker compose. */
