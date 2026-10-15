@@ -2,10 +2,10 @@ import { and, asc, eq, ilike, or, sql, type SQL } from 'drizzle-orm';
 import { Router } from 'express';
 import { z } from 'zod';
 import type { DB } from '../../db/client.js';
-import { marcas, productos, proveedores, stock, tipoProducto } from '../../db/schema/index.js';
+import { marcas, movimientosInventario, productos, proveedores, stock, tipoProducto, ventaItems } from '../../db/schema/index.js';
 import { noEncontrado } from '../../lib/errors.js';
 import { body, boolQuery, centavos, offset, paginacion, param, query, sucursalDe, usuarioDe } from '../../lib/http.js';
-import { soloAdmin } from '../../middleware/auth.js';
+import { requierePermiso } from '../../middleware/auth.js';
 import { moverStock } from '../inventario/servicio.js';
 
 const tipo = z.enum(tipoProducto.enumValues);
@@ -48,14 +48,15 @@ function crudSimple<T extends typeof marcas | typeof proveedores>(
   nombre: string,
 ) {
   const r = Router();
+  const gestiona = requierePermiso('catalogo.gestionar');
   r.get('/', async (_req, res) => {
     res.json(await db.select().from(tabla as typeof marcas).orderBy(asc((tabla as typeof marcas).nombre)));
   });
-  r.post('/', async (req, res) => {
+  r.post('/', gestiona, async (req, res) => {
     const [fila] = await db.insert(tabla).values(body(req, esquema) as never).returning();
     res.status(201).json(fila);
   });
-  r.patch('/:id', async (req, res) => {
+  r.patch('/:id', gestiona, async (req, res) => {
     const t = tabla as typeof marcas;
     const [fila] = await db
       .update(t)
@@ -70,6 +71,7 @@ function crudSimple<T extends typeof marcas | typeof proveedores>(
 
 export function rutasCatalogo(db: DB) {
   const r = Router();
+  r.use(requierePermiso('catalogo.ver'));
 
   r.use(
     '/marcas',
@@ -170,7 +172,7 @@ export function rutasCatalogo(db: DB) {
   });
 
   /** Crea un producto; opcionalmente registra su stock inicial como una entrada. */
-  r.post('/productos', soloAdmin, async (req, res) => {
+  r.post('/productos', requierePermiso('catalogo.gestionar'), async (req, res) => {
     const { stockInicial, ...datos } = body(
       req,
       productoEsquema.extend({
@@ -208,7 +210,7 @@ export function rutasCatalogo(db: DB) {
     res.status(201).json(creado);
   });
 
-  r.patch('/productos/:id', soloAdmin, async (req, res) => {
+  r.patch('/productos/:id', requierePermiso('catalogo.gestionar'), async (req, res) => {
     const [p] = await db
       .update(productos)
       .set(body(req, productoEsquema.partial()))
@@ -216,6 +218,29 @@ export function rutasCatalogo(db: DB) {
       .returning();
     if (!p) throw noEncontrado('Producto');
     res.json(p);
+  });
+
+  /**
+   * Eliminar: si el producto nunca tuvo movimientos ni ventas se borra de verdad;
+   * si tiene historial se desactiva (deja de aparecer para vender), para no romper el kardex ni las ventas.
+   */
+  r.delete('/productos/:id', requierePermiso('catalogo.gestionar'), async (req, res) => {
+    const id = param(req);
+    const resultado = await db.transaction(async (tx) => {
+      const [p] = await tx.select({ id: productos.id, nombre: productos.nombre }).from(productos).where(eq(productos.id, id));
+      if (!p) throw noEncontrado('Producto');
+      const [mov] = await tx.select({ id: movimientosInventario.id }).from(movimientosInventario)
+        .where(eq(movimientosInventario.productoId, id)).limit(1);
+      const [venta] = await tx.select({ id: ventaItems.id }).from(ventaItems).where(eq(ventaItems.productoId, id)).limit(1);
+      if (mov || venta) {
+        await tx.update(productos).set({ activo: false }).where(eq(productos.id, id));
+        return { eliminado: false, desactivado: true, mensaje: `"${p.nombre}" tiene historial: se desactivó en lugar de borrarse` };
+      }
+      await tx.delete(stock).where(eq(stock.productoId, id));
+      await tx.delete(productos).where(eq(productos.id, id));
+      return { eliminado: true, desactivado: false, mensaje: `"${p.nombre}" eliminado` };
+    });
+    res.json(resultado);
   });
 
   return r;

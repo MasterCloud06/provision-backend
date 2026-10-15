@@ -17,7 +17,7 @@ import {
 import { noEncontrado } from '../../lib/errors.js';
 import { finDia, inicioDia } from '../../lib/fechas.js';
 import { body, boolQuery, centavos, centavosPositivo, fecha, offset, paginacion, param, query, sucursalDe, usuarioDe } from '../../lib/http.js';
-import { requiereRol, soloAdmin } from '../../middleware/auth.js';
+import { requierePermiso } from '../../middleware/auth.js';
 import { anularVenta, cambiarEstadoTrabajo, crearVenta, registrarPagos } from './servicio.js';
 
 const pagoEsquema = z.object({
@@ -54,7 +54,7 @@ const ventaEsquema = z.object({
 
 export function rutasVentas(db: DB) {
   const r = Router();
-  r.use(requiereRol('ADMIN', 'VENDEDOR'));
+  r.use(requierePermiso('ventas.ver'));
 
   r.get('/', async (req, res) => {
     const f = query(
@@ -138,20 +138,20 @@ export function rutasVentas(db: DB) {
     });
   });
 
-  r.post('/', async (req, res) => {
+  r.post('/', requierePermiso('ventas.crear'), async (req, res) => {
     const { sucursalId: s, ...d } = body(req, ventaEsquema);
     const sucursalId = sucursalDe(req, s);
     const venta = await db.transaction((tx) => crearVenta(tx, { ...d, sucursalId }, usuarioDe(req)));
     res.status(201).json(venta);
   });
 
-  r.post('/:id/pagos', async (req, res) => {
+  r.post('/:id/pagos', requierePermiso('caja.operar'), async (req, res) => {
     const d = body(req, z.object({ pagos: z.array(pagoEsquema).min(1) }));
     const r2 = await db.transaction((tx) => registrarPagos(tx, param(req), d.pagos, usuarioDe(req)));
     res.status(201).json(r2);
   });
 
-  r.post('/:id/anular', soloAdmin, async (req, res) => {
+  r.post('/:id/anular', requierePermiso('ventas.anular'), async (req, res) => {
     const d = body(
       req,
       z.object({ motivo: z.string().trim().min(5).max(300), metodoReembolso: z.enum(metodoPago.enumValues).optional() }),
@@ -165,6 +165,7 @@ export function rutasVentas(db: DB) {
 
 export function rutasOrdenesTrabajo(db: DB) {
   const r = Router();
+  r.use(requierePermiso('laboratorio.ver'));
 
   /** Tablero del laboratorio: órdenes por estado, con datos del cliente y la venta. */
   r.get('/', async (req, res) => {
@@ -234,7 +235,7 @@ export function rutasOrdenesTrabajo(db: DB) {
     res.json({ ...ot, receta: receta ?? null, items, historial });
   });
 
-  r.patch('/:id', async (req, res) => {
+  r.patch('/:id', requierePermiso('laboratorio.gestionar'), async (req, res) => {
     const d = body(
       req,
       z.object({

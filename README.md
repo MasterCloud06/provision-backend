@@ -80,27 +80,35 @@ Otros: `npm test`, `npm run typecheck`, `npm run db:generate` (genera una migrac
 - **Errores** con forma `{ error: { codigo, mensaje, detalles } }`: `400 VALIDACION`, `401`, `403`, `404`, `409`, `422 REGLA_NEGOCIO`.
 - Listados paginados con `?pagina=1&porPagina=50`.
 
-## Roles
+## Roles y permisos
 
-| Rol | Puede |
-|---|---|
-| `ADMIN` | Todo: usuarios, sucursales, catálogo, ajustes de inventario, transferencias, anular ventas, cambiar precios, retiros del dueño |
-| `VENDEDOR` | Vender, cobrar, abrir/cerrar caja, gastos de caja, recepción y bajas de inventario, clientes |
-| `LABORATORIO` | Ver y avanzar órdenes de trabajo, consultar catálogo y clientes |
+Las rutas piden **permisos**, no roles. Cada rol es un paquete de permisos definido en `src/lib/permisos.ts`: para ajustar qué hace un rol se cambia solo ese archivo. `POST /auth/login` y `GET /auth/me` devuelven `nombreRol` y `permisos`, y la app los usa para mostrar u ocultar pantallas; `GET /auth/roles` lista todos los roles. Un cambio de rol o una desactivación aplica en la siguiente petición, sin volver a iniciar sesión.
+
+| Rol (`rol`) | Nombre | Qué hace |
+|---|---|---|
+| `ADMIN` | Administrador | Todo: usuarios, sucursales, otras sucursales, retiros del dueño |
+| `ENCARGADO` | Encargado de sucursal | Todo lo operativo: catálogo, inventario (ajustes incluidos), anular ventas, cambiar precios, caja, laboratorio, reportes |
+| `CAJERO` | Cajero | Caja (abrir, cerrar, gastos), vender y cobrar, cobrar saldos, entregar lentes pagados |
+| `VENDEDOR` | Ejecutivo de ventas | Clientes y ventas **sin cobro**: la venta queda con saldo y la cobra caja. Entrega lentes pagados |
+| `OPTOMETRISTA` | Optometrista | Clientes y recetas |
+| `LABORATORIO` | Laboratorio | Órdenes de trabajo: pendiente → en laboratorio → listo |
 
 Todos tienen sus propias **finanzas personales**, privadas.
+
+Protecciones: nadie puede desactivarse ni cambiarse el rol a sí mismo, y siempre debe quedar al menos un administrador activo.
 
 ## Módulos y endpoints (`/api/v1`)
 
 ### Acceso
-- `POST /auth/login` · `GET /auth/me` · `POST /auth/cambiar-password`
+- `POST /auth/login` · `GET /auth/me` · `GET /auth/roles` · `POST /auth/cambiar-password`
 - `GET|POST|PATCH /usuarios` (admin) · `GET|POST|PATCH /sucursales`
 
 ### Catálogo
 - `GET|POST|PATCH /catalogo/marcas`, `/catalogo/proveedores`
 - `GET /catalogo/productos` — filtros `q` (nombre, SKU, modelo, código de barras exacto), `tipo`, `marcaId`, `activo`, `bajoStock`; incluye stock de la sucursal
 - `GET /catalogo/productos/:id` — ficha con existencias en todas las sucursales
-- `POST /catalogo/productos` — admite `stockInicial: { cantidad, costoUnitario }`
+- `POST /catalogo/productos` — admite `stockInicial: { cantidad, costoUnitario }` · `PATCH /catalogo/productos/:id`
+- `DELETE /catalogo/productos/:id` — borra si nunca tuvo movimientos ni ventas; si tiene historial, lo desactiva
 - Tipos: `MONTURA`, `LENTE_OFTALMICO`, `LENTE_CONTACTO`, `GAFAS_SOL`, `ACCESORIO`, `LIQUIDO`, `SERVICIO`. Atributos ópticos libres en `atributos` (género, material, forma, color, calibre/puente/varilla, índice, tratamiento…)
 
 ### Inventario

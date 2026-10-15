@@ -1,15 +1,23 @@
 import bcrypt from 'bcryptjs';
-import { asc, eq } from 'drizzle-orm';
+import { and, asc, eq, ne, sql } from 'drizzle-orm';
 import { Router } from 'express';
 import { z } from 'zod';
 import type { DB } from '../../db/client.js';
 import { sucursales, usuarios } from '../../db/schema/index.js';
-import { noAutorizado, noEncontrado } from '../../lib/errors.js';
+import { noAutorizado, noEncontrado, reglaNegocio } from '../../lib/errors.js';
 import { body, param, usuarioDe } from '../../lib/http.js';
-import { autenticar, firmarToken, soloAdmin } from '../../middleware/auth.js';
+import { NOMBRE_ROL, PERMISOS_POR_ROL, ROLES, type Rol } from '../../lib/permisos.js';
+import { autenticar, firmarToken, requierePermiso } from '../../middleware/auth.js';
 import { crearCategoriasPorDefecto } from '../finanzas/servicio.js';
 
 const HASH_FALSO = bcrypt.hashSync('provision-hash-falso', 10);
+
+/** Lo que la app necesita saber del usuario para mostrar u ocultar pantallas. */
+const conPermisos = <T extends { rol: Rol }>(u: T) => ({
+  ...u,
+  nombreRol: NOMBRE_ROL[u.rol],
+  permisos: PERMISOS_POR_ROL[u.rol],
+});
 
 const columnasPublicas = {
   id: usuarios.id,
@@ -31,11 +39,16 @@ export function rutasAuth(db: DB) {
     const ok = await bcrypt.compare(datos.password, u?.passwordHash ?? HASH_FALSO);
     if (!u || !ok || !u.activo) throw noAutorizado('Email o contraseña incorrectos');
     const { passwordHash: _, ...publico } = u;
-    res.json({ token: firmarToken(u.id), usuario: publico });
+    res.json({ token: firmarToken(u.id), usuario: conPermisos(publico) });
   });
 
   r.get('/me', autenticar(db), (req, res) => {
-    res.json(usuarioDe(req));
+    res.json(conPermisos(usuarioDe(req)));
+  });
+
+  /** Roles disponibles con su nombre y permisos (para formularios y para documentar). */
+  r.get('/roles', autenticar(db), (_req, res) => {
+    res.json(ROLES.map((rol) => ({ rol, nombre: NOMBRE_ROL[rol], permisos: PERMISOS_POR_ROL[rol] })));
   });
 
   r.post('/cambiar-password', autenticar(db), async (req, res) => {
@@ -59,16 +72,17 @@ const usuarioEsquema = z.object({
   nombre: z.string().trim().min(2).max(120),
   email: z.email().trim().toLowerCase(),
   password: z.string().min(8),
-  rol: z.enum(['ADMIN', 'VENDEDOR', 'LABORATORIO']),
+  rol: z.enum(ROLES),
   sucursalId: z.uuid().nullable().optional(),
 });
 
 export function rutasUsuarios(db: DB) {
   const r = Router();
-  r.use(soloAdmin);
+  r.use(requierePermiso('usuarios.gestionar'));
 
   r.get('/', async (_req, res) => {
-    res.json(await db.select(columnasPublicas).from(usuarios).orderBy(asc(usuarios.nombre)));
+    const filas = await db.select(columnasPublicas).from(usuarios).orderBy(asc(usuarios.nombre));
+    res.json(filas.map((u) => ({ ...u, nombreRol: NOMBRE_ROL[u.rol] })));
   });
 
   r.post('/', async (req, res) => {
@@ -85,11 +99,27 @@ export function rutasUsuarios(db: DB) {
   });
 
   r.patch('/:id', async (req, res) => {
+    const id = param(req);
     const { password, ...datos } = body(req, usuarioEsquema.extend({ activo: z.boolean() }).partial());
+    const yo = usuarioDe(req);
+    // Protecciones para no dejar el sistema sin quien lo administre.
+    if (id === yo.id && (datos.activo === false || (datos.rol && datos.rol !== yo.rol))) {
+      throw reglaNegocio('No puedes desactivarte ni cambiar tu propio rol');
+    }
+    if (datos.activo === false || (datos.rol && datos.rol !== 'ADMIN')) {
+      const [otros] = await db
+        .select({ n: sql<number>`count(*)::int` })
+        .from(usuarios)
+        .where(and(eq(usuarios.rol, 'ADMIN'), eq(usuarios.activo, true), ne(usuarios.id, id)));
+      const [actual] = await db.select({ rol: usuarios.rol }).from(usuarios).where(eq(usuarios.id, id));
+      if (actual?.rol === 'ADMIN' && otros!.n === 0) {
+        throw reglaNegocio('Debe quedar al menos un administrador activo');
+      }
+    }
     const [u] = await db
       .update(usuarios)
       .set({ ...datos, ...(password ? { passwordHash: await bcrypt.hash(password, 10) } : {}) })
-      .where(eq(usuarios.id, param(req)))
+      .where(eq(usuarios.id, id))
       .returning(columnasPublicas);
     if (!u) throw noEncontrado('Usuario');
     res.json(u);
@@ -117,12 +147,12 @@ export function rutasSucursales(db: DB) {
     res.json(await db.select().from(sucursales).orderBy(asc(sucursales.nombre)));
   });
 
-  r.post('/', soloAdmin, async (req, res) => {
+  r.post('/', requierePermiso('sucursales.gestionar'), async (req, res) => {
     const [s] = await db.insert(sucursales).values(body(req, sucursalEsquema)).returning();
     res.status(201).json(s);
   });
 
-  r.patch('/:id', soloAdmin, async (req, res) => {
+  r.patch('/:id', requierePermiso('sucursales.gestionar'), async (req, res) => {
     const [s] = await db
       .update(sucursales)
       .set(body(req, sucursalEsquema.partial()))

@@ -5,11 +5,11 @@ import type { DB } from '../../db/client.js';
 import { ordenesTrabajo, productos, sesionesCaja, stock, usuarios, ventaItems, ventas } from '../../db/schema/index.js';
 import { finDia, hoy, inicioDia } from '../../lib/fechas.js';
 import { fecha, query, sucursalDe } from '../../lib/http.js';
-import { requiereRol } from '../../middleware/auth.js';
+import { requierePermiso } from '../../middleware/auth.js';
 
 export function rutasReportes(db: DB) {
   const r = Router();
-  r.use(requiereRol('ADMIN', 'VENDEDOR'));
+  r.use(requierePermiso('reportes.ver'));
 
   /** Indicadores del negocio para la pantalla principal. */
   r.get('/dashboard', async (req, res) => {

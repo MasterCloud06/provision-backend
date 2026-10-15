@@ -8,6 +8,13 @@
       "when": 1792079017738,
       "tag": "0000_inicial",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1792086470178,
+      "tag": "0001_roles_por_permisos",
+      "breakpoints": true
     }
   ]
 }

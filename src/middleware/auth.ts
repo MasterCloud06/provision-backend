@@ -6,6 +6,7 @@ import type { DB } from '../db/client.js';
 import { usuarios } from '../db/schema/index.js';
 import { noAutorizado, prohibido } from '../lib/errors.js';
 import type { UsuarioSesion } from '../lib/http.js';
+import { tienePermiso, type Permiso } from '../lib/permisos.js';
 
 export function firmarToken(usuarioId: string): string {
   return jwt.sign({ sub: usuarioId }, env.JWT_SECRET, {
@@ -13,7 +14,7 @@ export function firmarToken(usuarioId: string): string {
   });
 }
 
-/** Verifica el token y recarga el usuario: si se desactiva, pierde acceso de inmediato. */
+/** Verifica el token y recarga el usuario: si se desactiva o cambia de rol, aplica de inmediato. */
 export function autenticar(db: DB): RequestHandler {
   return async (req: Request, _res: Response, next: NextFunction) => {
     const header = req.headers.authorization;
@@ -44,12 +45,12 @@ export function autenticar(db: DB): RequestHandler {
   };
 }
 
-export function requiereRol(...roles: UsuarioSesion['rol'][]): RequestHandler {
+/** Exige uno o más permisos (todos). */
+export function requierePermiso(...permisos: Permiso[]): RequestHandler {
   return (req, _res, next) => {
     if (!req.usuario) throw noAutorizado();
-    if (!roles.includes(req.usuario.rol)) throw prohibido();
+    const falta = permisos.find((p) => !tienePermiso(req.usuario!.rol, p));
+    if (falta) throw prohibido(`No tienes permiso para esta acción (${falta})`);
     next();
   };
 }
-
-export const soloAdmin = requiereRol('ADMIN');

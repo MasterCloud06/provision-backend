@@ -4,15 +4,15 @@ import { z } from 'zod';
 import type { DB } from '../../db/client.js';
 import { metodoPago, movimientosCaja, sesionesCaja, transaccionesPersonales, usuarios, ventas } from '../../db/schema/index.js';
 import { conflicto, prohibido, reglaNegocio } from '../../lib/errors.js';
-import { body, centavos, centavosPositivo, offset, paginacion, param, query, sucursalDe, usuarioDe } from '../../lib/http.js';
+import { body, puede, centavos, centavosPositivo, offset, paginacion, param, query, sucursalDe, usuarioDe } from '../../lib/http.js';
 import { hoy } from '../../lib/fechas.js';
-import { requiereRol } from '../../middleware/auth.js';
+import { requierePermiso } from '../../middleware/auth.js';
 import { CATEGORIA_RETIROS, categoriaPorNombre, cuentaDelUsuario } from '../finanzas/servicio.js';
 import { cajaAbierta, registrarMovimientoCaja, resumenSesion } from './servicio.js';
 
 export function rutasCaja(db: DB) {
   const r = Router();
-  r.use(requiereRol('ADMIN', 'VENDEDOR'));
+  r.use(requierePermiso('caja.operar'));
 
   /** Estado actual de la caja de la sucursal (o null si está cerrada). */
   r.get('/actual', async (req, res) => {
@@ -112,8 +112,8 @@ export function rutasCaja(db: DB) {
         }),
     );
     const usuario = usuarioDe(req);
-    if (d.concepto === 'RETIRO_DUENO' && usuario.rol !== 'ADMIN') {
-      throw prohibido('Solo el administrador puede registrar retiros del dueño');
+    if (d.concepto === 'RETIRO_DUENO' && !puede(req, 'caja.retiro_dueno')) {
+      throw prohibido('Solo el dueño puede registrar retiros del dueño');
     }
     const tipo =
       d.concepto === 'GASTO' || d.concepto === 'RETIRO_DUENO' ? 'EGRESO' : d.concepto === 'DEPOSITO' ? 'INGRESO' : d.tipo;

@@ -13,6 +13,7 @@ import {
 import { siguienteNumero } from '../../lib/correlativo.js';
 import { noEncontrado, prohibido, reglaNegocio } from '../../lib/errors.js';
 import type { UsuarioSesion } from '../../lib/http.js';
+import { tienePermiso } from '../../lib/permisos.js';
 import { cajaAbierta, registrarMovimientoCaja, resumenSesion } from '../caja/servicio.js';
 import { moverStock } from '../inventario/servicio.js';
 
@@ -87,8 +88,8 @@ export async function crearVenta(tx: Exec, d: NuevaVenta, usuario: UsuarioSesion
     if (!p) throw noEncontrado(`Producto ${it.productoId}`);
     if (!p.activo) throw reglaNegocio(`"${p.nombre}" está inactivo y no se puede vender`);
     const precio = it.precioUnitario ?? p.precioVenta;
-    if (precio !== p.precioVenta && usuario.rol !== 'ADMIN') {
-      throw prohibido('Solo un administrador puede cambiar el precio de lista; usa un descuento');
+    if (precio !== p.precioVenta && !tienePermiso(usuario.rol, 'precios.modificar')) {
+      throw prohibido('No puedes cambiar el precio de lista; usa un descuento');
     }
     const bruto = precio * it.cantidad;
     const descuento = it.descuento ?? 0;
@@ -102,6 +103,11 @@ export async function crearVenta(tx: Exec, d: NuevaVenta, usuario: UsuarioSesion
     };
   });
 
+  // Quien no opera caja (p. ej. el ejecutivo de ventas) registra la venta y el cobro lo hace caja.
+  if (d.pagos?.length && !tienePermiso(usuario.rol, 'caja.operar')) {
+    throw prohibido('No puedes cobrar: registra la venta sin pagos y el cajero la cobra');
+  }
+
   const subtotal = lineas.reduce((a, l) => a + l.total, 0);
   const descuento = d.descuento ?? 0;
   if (descuento > subtotal) throw reglaNegocio('El descuento supera el subtotal');
@@ -111,7 +117,11 @@ export async function crearVenta(tx: Exec, d: NuevaVenta, usuario: UsuarioSesion
     throw reglaNegocio('Los pagos superan el total de la venta (el cambio se calcula fuera)', { total, pagado });
   }
   if (pagado < total && !d.clienteId) {
-    throw reglaNegocio('Para dejar saldo pendiente, la venta debe tener un cliente asignado');
+    throw reglaNegocio(
+      tienePermiso(usuario.rol, 'caja.operar')
+        ? 'Para dejar saldo pendiente, la venta debe tener un cliente asignado'
+        : 'Asigna un cliente a la venta para que caja pueda cobrarla',
+    );
   }
 
   const numero = await siguienteNumero(tx, d.sucursalId, 'V');
@@ -197,7 +207,7 @@ async function ventaBloqueada(tx: Exec, ventaId: string) {
 export async function registrarPagos(tx: Exec, ventaId: string, lista: PagoEntrada[], usuario: UsuarioSesion) {
   const v = await ventaBloqueada(tx, ventaId);
   if (v.estado === 'ANULADA') throw reglaNegocio('La venta está anulada');
-  if (v.sucursalId !== usuario.sucursalId && usuario.rol !== 'ADMIN') throw prohibido();
+  if (v.sucursalId !== usuario.sucursalId && !tienePermiso(usuario.rol, 'sucursales.todas')) throw prohibido();
   const monto = lista.reduce((a, p) => a + p.monto, 0);
   if (monto > v.saldo) throw reglaNegocio('El pago supera el saldo pendiente', { saldo: v.saldo, monto });
 
@@ -304,11 +314,19 @@ export async function cambiarEstadoTrabajo(
 ) {
   const [ot] = await tx.select().from(ordenesTrabajo).where(eq(ordenesTrabajo.id, ordenId)).for('update');
   if (!ot) throw noEncontrado('Orden de trabajo');
+  const permiso =
+    d.estado === 'ENTREGADO' ? 'laboratorio.entregar' : d.estado === 'CANCELADO' ? 'laboratorio.cancelar' : 'laboratorio.gestionar';
+  if (!tienePermiso(usuario.rol, permiso)) {
+    throw prohibido(
+      d.estado === 'ENTREGADO'
+        ? 'La entrega al cliente la registra caja o ventas'
+        : d.estado === 'CANCELADO'
+          ? 'No puedes cancelar órdenes (normalmente se anula la venta)'
+          : 'No puedes cambiar el estado de las órdenes de laboratorio',
+    );
+  }
   if (!TRANSICIONES[ot.estado].includes(d.estado)) {
     throw reglaNegocio(`No se puede pasar de ${ot.estado} a ${d.estado}`, { permitidos: TRANSICIONES[ot.estado] });
-  }
-  if (d.estado === 'CANCELADO' && usuario.rol !== 'ADMIN') {
-    throw prohibido('Solo un administrador puede cancelar una orden (normalmente se anula la venta)');
   }
   if (d.estado === 'ENTREGADO') {
     const [v] = await tx.select().from(ventas).where(and(eq(ventas.id, ot.ventaId)));

@@ -7,7 +7,7 @@ import { movimientosInventario, productos, proveedores, stock, usuarios } from '
 import { noEncontrado, reglaNegocio } from '../../lib/errors.js';
 import { body, centavos, fecha, offset, paginacion, param, query, sucursalDe, usuarioDe } from '../../lib/http.js';
 import { finDia, inicioDia } from '../../lib/fechas.js';
-import { requiereRol } from '../../middleware/auth.js';
+import { requierePermiso } from '../../middleware/auth.js';
 import { ajustarAConteo, moverStock } from './servicio.js';
 
 const lineas = <T extends z.ZodRawShape>(extra: T) =>
@@ -21,7 +21,7 @@ const lineas = <T extends z.ZodRawShape>(extra: T) =>
 
 export function rutasInventario(db: DB) {
   const r = Router();
-  const gestiona = requiereRol('ADMIN', 'VENDEDOR');
+  r.use(requierePermiso('inventario.ver'));
 
   /** Productos con stock en o por debajo del mínimo: la lista de reposición. */
   r.get('/alertas', async (req, res) => {
@@ -105,7 +105,7 @@ export function rutasInventario(db: DB) {
   });
 
   /** Recepción de mercadería: varias líneas con su costo, opcionalmente de un proveedor. */
-  r.post('/entradas', gestiona, async (req, res) => {
+  r.post('/entradas', requierePermiso('inventario.recibir'), async (req, res) => {
     const d = body(
       req,
       z.object({
@@ -148,7 +148,7 @@ export function rutasInventario(db: DB) {
   });
 
   /** Bajas: roturas, mermas, muestras, uso interno. */
-  r.post('/salidas', gestiona, async (req, res) => {
+  r.post('/salidas', requierePermiso('inventario.bajas'), async (req, res) => {
     const d = body(
       req,
       z.object({
@@ -178,7 +178,7 @@ export function rutasInventario(db: DB) {
   });
 
   /** Conteo físico: se envía lo contado y el sistema ajusta las diferencias. */
-  r.post('/ajustes', requiereRol('ADMIN'), async (req, res) => {
+  r.post('/ajustes', requierePermiso('inventario.ajustar'), async (req, res) => {
     const d = body(
       req,
       z.object({
@@ -201,7 +201,7 @@ export function rutasInventario(db: DB) {
   });
 
   /** Traslado entre sucursales: sale de una y entra a otra en la misma transacción. */
-  r.post('/transferencias', requiereRol('ADMIN'), async (req, res) => {
+  r.post('/transferencias', requierePermiso('inventario.ajustar', 'sucursales.todas'), async (req, res) => {
     const d = body(
       req,
       z.object({
@@ -234,7 +234,7 @@ export function rutasInventario(db: DB) {
   });
 
   /** Ubicación física del producto en la sucursal (vitrina 3, cajón B...). */
-  r.patch('/ubicacion/:id', gestiona, async (req, res) => {
+  r.patch('/ubicacion/:id', requierePermiso('inventario.recibir'), async (req, res) => {
     const productoId = param(req);
     const d = body(req, z.object({ sucursalId: z.uuid().optional(), ubicacion: z.string().trim().max(60).nullable() }));
     const sucursalId = sucursalDe(req, d.sucursalId);

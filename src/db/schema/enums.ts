@@ -1,6 +1,15 @@
 import { pgEnum } from 'drizzle-orm/pg-core';
 
-export const rolUsuario = pgEnum('rol_usuario', ['ADMIN', 'VENDEDOR', 'LABORATORIO']);
+// Los valores nuevos se agregan al final: Postgres solo permite añadir valores a un enum.
+// Permisos de cada rol: src/lib/permisos.ts
+export const rolUsuario = pgEnum('rol_usuario', [
+  'ADMIN',
+  'VENDEDOR', // ejecutivo de ventas
+  'LABORATORIO',
+  'ENCARGADO',
+  'CAJERO',
+  'OPTOMETRISTA',
+]);
 
 export const tipoProducto = pgEnum('tipo_producto', [
   'MONTURA',

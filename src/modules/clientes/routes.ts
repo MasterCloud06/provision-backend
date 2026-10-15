@@ -5,6 +5,7 @@ import type { DB } from '../../db/client.js';
 import { clientes, recetas, ventas } from '../../db/schema/index.js';
 import { noEncontrado } from '../../lib/errors.js';
 import { body, fecha, offset, paginacion, param, query, usuarioDe } from '../../lib/http.js';
+import { requierePermiso } from '../../middleware/auth.js';
 
 const clienteEsquema = z.object({
   nombre: z.string().trim().min(2).max(160),
@@ -57,6 +58,9 @@ const recetaCoherente = <T extends z.ZodType<Partial<z.infer<typeof recetaEsquem
 
 export function rutasClientes(db: DB) {
   const r = Router();
+  r.use(requierePermiso('clientes.ver'));
+  const gestiona = requierePermiso('clientes.gestionar');
+  const recetasPermiso = requierePermiso('recetas.gestionar');
 
   r.get('/', async (req, res) => {
     const f = query(req, paginacion.extend({ q: z.string().trim().optional() }));
@@ -103,12 +107,12 @@ export function rutasClientes(db: DB) {
     res.json({ ...cliente, recetas: listaRecetas, compras, saldoPendiente });
   });
 
-  r.post('/', async (req, res) => {
+  r.post('/', gestiona, async (req, res) => {
     const [c] = await db.insert(clientes).values(body(req, clienteEsquema)).returning();
     res.status(201).json(c);
   });
 
-  r.patch('/:id', async (req, res) => {
+  r.patch('/:id', gestiona, async (req, res) => {
     const [c] = await db
       .update(clientes)
       .set(body(req, clienteEsquema.partial()))
@@ -120,7 +124,7 @@ export function rutasClientes(db: DB) {
 
   /* Recetas */
 
-  r.post('/:id/recetas', async (req, res) => {
+  r.post('/:id/recetas', recetasPermiso, async (req, res) => {
     const clienteId = param(req);
     const [cliente] = await db.select({ id: clientes.id }).from(clientes).where(eq(clientes.id, clienteId));
     if (!cliente) throw noEncontrado('Cliente');
@@ -132,7 +136,7 @@ export function rutasClientes(db: DB) {
     res.status(201).json(receta);
   });
 
-  r.patch('/:id/recetas/:recetaId', async (req, res) => {
+  r.patch('/:id/recetas/:recetaId', recetasPermiso, async (req, res) => {
     const datos = body(req, recetaCoherente(recetaEsquema.partial()));
     const [receta] = await db
       .update(recetas)

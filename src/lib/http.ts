@@ -1,12 +1,13 @@
 import type { Request } from 'express';
 import { z } from 'zod';
 import { AppError, prohibido, reglaNegocio } from './errors.js';
+import { tienePermiso, type Permiso, type Rol } from './permisos.js';
 
 export type UsuarioSesion = {
   id: string;
   nombre: string;
   email: string;
-  rol: 'ADMIN' | 'VENDEDOR' | 'LABORATORIO';
+  rol: Rol;
   sucursalId: string | null;
 };
 
@@ -38,17 +39,20 @@ export function usuarioDe(req: Request): UsuarioSesion {
 
 /**
  * Decide en qué sucursal opera la petición: la del usuario por defecto.
- * Solo ADMIN puede operar sobre otra sucursal indicándola explícitamente.
+ * Solo quien tiene 'sucursales.todas' puede operar sobre otra sucursal indicándola explícitamente.
  */
 export function sucursalDe(req: Request, solicitada?: string | null): string {
   const u = usuarioDe(req);
   if (solicitada && solicitada !== u.sucursalId) {
-    if (u.rol !== 'ADMIN') throw prohibido('Solo un administrador puede operar en otra sucursal');
+    if (!tienePermiso(u.rol, 'sucursales.todas')) throw prohibido('No puedes operar en otra sucursal');
     return solicitada;
   }
   if (!u.sucursalId) throw reglaNegocio('Indica sucursalId: tu usuario no tiene sucursal asignada');
   return u.sucursalId;
 }
+
+/** ¿El usuario de la petición tiene este permiso? */
+export const puede = (req: Request, permiso: Permiso) => tienePermiso(usuarioDe(req).rol, permiso);
 
 /* Esquemas reutilizables */
 
