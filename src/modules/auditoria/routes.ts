@@ -73,7 +73,7 @@ export function rutasAuditoria(db: DB) {
           eventos: n(sql`count(*)`),
           denegados: n(sql`count(*) filter (where ${negados})`),
           usuarios: n(sql`count(distinct ${eventos.usuarioId})`),
-          ultimo: sql<string>`max(${eventos.creadoEn})`,
+          ultimo: sql<Date>`max(${eventos.creadoEn})`.mapWith(eventos.creadoEn),
         })
         .from(eventos)
         .where(where)
@@ -85,7 +85,7 @@ export function rutasAuditoria(db: DB) {
           rol: eventos.rol,
           eventos: n(sql`count(*)`),
           denegados: n(sql`count(*) filter (where ${negados})`),
-          ultimo: sql<string>`max(${eventos.creadoEn})`,
+          ultimo: sql<Date>`max(${eventos.creadoEn})`.mapWith(eventos.creadoEn),
         })
         .from(eventos)
         .where(and(where, sql`${eventos.usuarioId} is not null`))

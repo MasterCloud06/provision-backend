@@ -124,6 +124,9 @@ describe('super administrador y registro de eventos', () => {
     const vendedor = r.porRol.find((p: { rol: string }) => p.rol === 'VENDEDOR');
     expect(vendedor).toMatchObject({ nombre: 'Ejecutivo de ventas', usuarios: 1 });
     expect(vendedor.denegados).toBeGreaterThanOrEqual(1);
+    // Fechas en ISO 8601 para que cualquier cliente (la app en C#) las lea
+    expect(vendedor.ultimo).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/);
+    expect(r.porUsuario[0].ultimo).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     expect(r.totales.denegados).toBeGreaterThanOrEqual(1);
     expect(r.totales.fallidos).toBe(1);
     expect(r.porModulo.map((m: { modulo: string }) => m.modulo)).toEqual(expect.arrayContaining(['ventas', 'caja', 'usuarios', 'acceso']));
