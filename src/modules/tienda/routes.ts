@@ -4,7 +4,8 @@ import { rateLimit } from 'express-rate-limit';
 import { z } from 'zod';
 import { env } from '../../config/env.js';
 import type { DB } from '../../db/client.js';
-import { carritoItems, marcas, pedidosWeb, productos, tipoProducto } from '../../db/schema/index.js';
+import { carritoItems, citas, marcas, motivoCita, pedidosWeb, productos, tipoProducto } from '../../db/schema/index.js';
+import { citasActivasDeCuenta, disponibilidad, MOTIVOS, reservar } from '../citas/servicio.js';
 import { AppError, noEncontrado, reglaNegocio } from '../../lib/errors.js';
 import { body, boolQuery, offset, param, query } from '../../lib/http.js';
 import type { PasarelaPagos } from '../../lib/pagos.js';
@@ -199,6 +200,71 @@ export function rutasTienda(db: DB, pasarela: PasarelaPagos | null) {
 
   const conSesion = autenticarCliente(db);
   r.use('/cuenta', conSesion, rutasCuentaTienda(db));
+
+  /* Citas (examen de la vista) */
+
+  /** Turnos libres de los próximos días. Público: se puede mirar antes de crear la cuenta. */
+  r.get('/citas/disponibilidad', async (req, res) => {
+    const f = query(req, z.object({ desde: z.iso.date().optional(), dias: z.coerce.number().int().min(1).max(31).default(14) }));
+    const s = await sucursalTienda(db);
+    res.json({ dias: await disponibilidad(db, s.id, f.desde, f.dias), duracion: env.CITAS_DURACION, motivos: MOTIVOS });
+  });
+
+  const citaPublica = (c: typeof citas.$inferSelect) => ({
+    id: c.id,
+    fecha: c.fecha,
+    hora: c.hora,
+    duracion: c.duracion,
+    motivo: c.motivo,
+    motivoTexto: MOTIVOS[c.motivo],
+    estado: c.estado,
+    nombreContacto: c.nombreContacto,
+    telefono: c.telefono,
+    notas: c.notas,
+    canceladaMotivo: c.canceladaMotivo,
+    creadoEn: c.creadoEn,
+  });
+
+  r.get('/citas', conSesion, async (req, res) => {
+    const lista = await db.select().from(citas).where(eq(citas.cuentaId, clienteDe(req).cuentaId)).orderBy(desc(citas.fecha), desc(citas.hora)).limit(50);
+    res.json(lista.map(citaPublica));
+  });
+
+  r.post('/citas', conSesion, async (req, res) => {
+    const c = clienteDe(req);
+    const d = body(
+      req,
+      z.object({
+        fecha: z.iso.date(),
+        hora: z.string().regex(/^\d{2}:\d{2}$/),
+        motivo: z.enum(motivoCita.enumValues).default('EXAMEN_VISTA'),
+        nombreContacto: z.string().trim().min(2).max(160).optional(),
+        telefono: z.string().trim().min(6, 'Escribe tu teléfono o WhatsApp').max(40),
+        notas: z.string().trim().max(500).nullish(),
+      }),
+    );
+    if ((await citasActivasDeCuenta(db, c.cuentaId)).length >= 2) {
+      throw reglaNegocio('Ya tienes 2 citas por venir. Cancela una para reservar otra.');
+    }
+    const s = await sucursalTienda(db);
+    const cita = await reservar(db, {
+      ...d,
+      nombreContacto: d.nombreContacto ?? c.nombre,
+      sucursalId: s.id,
+      clienteId: c.clienteId,
+      cuentaId: c.cuentaId,
+    });
+    res.status(201).json(citaPublica(cita));
+  });
+
+  r.post('/citas/:id/cancelar', conSesion, async (req, res) => {
+    const c = clienteDe(req);
+    const [cita] = await db.select().from(citas).where(and(eq(citas.id, param(req)), eq(citas.cuentaId, c.cuentaId)));
+    if (!cita) throw noEncontrado('Cita');
+    if (cita.estado !== 'PENDIENTE' && cita.estado !== 'CONFIRMADA') throw reglaNegocio('Esta cita ya no se puede cancelar');
+    const [act] = await db.update(citas).set({ estado: 'CANCELADA', canceladaMotivo: 'Cancelada por el cliente' }).where(eq(citas.id, cita.id)).returning();
+    res.json(citaPublica(act!));
+  });
 
   /* Carrito */
 

@@ -96,6 +96,8 @@ Las rutas piden **permisos**, no roles. Cada rol es un paquete de permisos defin
 
 Todos tienen sus propias **finanzas personales**, privadas.
 
+Ingreso: 5 contraseñas incorrectas seguidas bloquean esa cuenta 15 minutos (también en la tienda), y cada conexión tiene un límite de intentos. Los bloqueos quedan en la auditoría.
+
 Protecciones: nadie puede desactivarse ni cambiarse el rol a sí mismo; solo el super administrador gestiona cuentas de administrador; siempre debe quedar al menos un super administrador activo.
 
 El primer usuario (`db:crear-admin`) es super administrador. En bases creadas antes de este rol, al arrancar el servidor (o al migrar) el administrador activo más antiguo pasa a ser super administrador.
@@ -218,6 +220,22 @@ Los clientes solo ven productos **activos** y con `visibleTienda = true` (por de
 - `POST /pedidos-web/:id/notas` — notas internas (el cliente no las ve)
 
 Permiso `tienda.gestionar`: administradores, encargado, cajero y ejecutivo de ventas. "Mi panel" les avisa cuántos pedidos web hay por preparar.
+
+### Citas (examen de la vista)
+
+Los clientes reservan desde la tienda web y el personal ve la agenda en el escritorio y la app.
+
+- Tienda: `GET /tienda/citas/disponibilidad?desde&dias` (público: turnos libres) · `GET|POST /tienda/citas` · `POST /tienda/citas/:id/cancelar`. Cada cuenta puede tener hasta 2 citas por venir.
+- Personal (`citas.gestionar`: administradores, encargado, cajero, ejecutivo de ventas y optometrista): `GET /citas?desde&hasta` (agenda; por defecto hoy) · `GET /citas/disponibilidad` · `GET /citas/config` · `POST /citas` (reserva por teléfono: queda confirmada y, si no tiene ficha, se le crea) · `POST /citas/:id/estado` (`CONFIRMADA`, `ATENDIDA`, `NO_ASISTIO`, `CANCELADA`; `nota` va a las notas internas).
+- Reglas: no se puede reservar en el pasado, con menos de una hora de anticipación ni fuera del horario; cada turno admite `CITAS_CUPOS` citas a la vez (la reserva bloquea la sucursal para que dos personas no tomen el último cupo al mismo tiempo).
+- "Mi panel" avisa las citas de hoy y las que falta confirmar.
+
+| Variable | Por defecto |
+|---|---|
+| `CITAS_HORARIO` | `lun-vie 09:00-13:00 15:00-19:00; sab 09:00-13:00` |
+| `CITAS_DURACION` | `30` (minutos) |
+| `CITAS_CUPOS` | `1` (citas al mismo tiempo) |
+| `CITAS_DIAS_ADELANTE` | `30` |
 
 ### Fotos (Cloudinary)
 

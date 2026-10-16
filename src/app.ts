@@ -18,6 +18,7 @@ import { rutasInventario } from './modules/inventario/routes.js';
 import { rutasReportes } from './modules/reportes/routes.js';
 import { rutasOrdenesTrabajo, rutasVentas } from './modules/ventas/routes.js';
 import { rutasPedidosWeb } from './modules/pedidos-web/routes.js';
+import { rutasCitas } from './modules/citas/routes.js';
 import { rutasTienda, webhookStripe } from './modules/tienda/routes.js';
 import { pasarelaDesdeEntorno, type PasarelaPagos } from './lib/pagos.js';
 import { almacenDesdeEntorno, type AlmacenFotos } from './lib/fotos.js';
@@ -69,6 +70,7 @@ export function crearApp(db: DB, opciones: OpcionesApp = {}) {
   api.use('/reportes', rutasReportes(db));
   api.use('/auditoria', rutasAuditoria(db));
   api.use('/pedidos-web', rutasPedidosWeb(db, pagos));
+  api.use('/citas', rutasCitas(db));
 
   app.use('/api/v1', api);
   app.use(noEncontradoRuta);

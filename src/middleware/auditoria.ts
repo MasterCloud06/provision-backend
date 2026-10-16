@@ -97,6 +97,12 @@ const REGLAS: Record<string, { modulo: string; titulo: string; detalle?: (r: Cue
     detalle: (r, b) => `Anuló la venta ${r.venta?.numero}: ${b.motivo}`,
   },
 
+  'POST /citas': { modulo: 'citas', titulo: 'Reservar cita', detalle: (r) => `Reservó una cita para ${r.nombreContacto} el ${r.fecha} a las ${r.hora}` },
+  'POST /citas/:id/estado': {
+    modulo: 'citas',
+    titulo: 'Cambiar estado de cita',
+    detalle: (r) => `Cita de ${r.nombreContacto} (${r.fecha} ${r.hora}) → ${r.estado}`,
+  },
   'POST /pedidos-web/:id/estado': {
     modulo: 'tienda',
     titulo: 'Atender pedido web',

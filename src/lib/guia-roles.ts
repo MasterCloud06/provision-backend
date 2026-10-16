@@ -59,6 +59,7 @@ export const GUIA_ROLES: Record<Rol, { proposito: string; responsabilidades: str
     proposito:
       'Examinas la vista de los clientes y registras su graduación. Tu receta es la base de todo el trabajo del laboratorio.',
     responsabilidades: [
+      'Revisar tu agenda del día y confirmar las citas',
       'Registrar al cliente si es nuevo',
       'Cargar la receta completa: esfera, cilindro, eje, adición y DNP',
       'Indicar el uso recomendado y las observaciones',

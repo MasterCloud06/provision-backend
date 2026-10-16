@@ -36,6 +36,13 @@
       "when": 1792114257036,
       "tag": "0004_pedido_web_venta",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1792118095140,
+      "tag": "0005_citas",
+      "breakpoints": true
     }
   ]
 }

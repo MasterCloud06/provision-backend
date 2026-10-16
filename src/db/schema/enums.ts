@@ -99,3 +99,15 @@ export const entregaPedidoWeb = pgEnum('entrega_pedido_web', ['RETIRO', 'ENVIO']
 
 /** STRIPE = tarjeta en línea; EN_TIENDA = paga al retirar. */
 export const metodoPagoWeb = pgEnum('metodo_pago_web', ['STRIPE', 'EN_TIENDA']);
+
+/* ─────────────────────────── Citas ─────────────────────────── */
+
+export const estadoCita = pgEnum('estado_cita', [
+  'PENDIENTE', // reservada, falta confirmar con el cliente
+  'CONFIRMADA',
+  'ATENDIDA',
+  'NO_ASISTIO',
+  'CANCELADA',
+]);
+
+export const motivoCita = pgEnum('motivo_cita', ['EXAMEN_VISTA', 'CONTROL', 'LENTES_CONTACTO', 'AJUSTE', 'OTRO']);

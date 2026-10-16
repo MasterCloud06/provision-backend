@@ -21,10 +21,11 @@ import { GUIA_ROLES } from '../../lib/guia-roles.js';
 import { usuarioDe, type UsuarioSesion } from '../../lib/http.js';
 import { NOMBRE_ROL, tienePermiso } from '../../lib/permisos.js';
 import { resumenSesion } from '../caja/servicio.js';
+import { resumenCitas } from '../citas/servicio.js';
 
 type Urgencia = 'ALTA' | 'MEDIA' | 'INFO' | 'OK';
 /** Claves de pantalla que la app usa para llevar al usuario donde se hace la tarea. */
-type Pantalla = 'panel' | 'indicadores' | 'auditoria' | 'vender' | 'ventas' | 'caja' | 'laboratorio' | 'clientes' | 'inventario' | 'usuarios' | 'pedidos';
+type Pantalla = 'panel' | 'indicadores' | 'auditoria' | 'vender' | 'ventas' | 'caja' | 'laboratorio' | 'clientes' | 'inventario' | 'usuarios' | 'pedidos' | 'agenda';
 
 type Tarea = { clave: string; titulo: string; detalle: string; cantidad: number | null; urgencia: Urgencia; pantalla: Pantalla | null };
 type Indicador = { titulo: string; valor: string; detalle?: string };
@@ -325,6 +326,31 @@ async function armarPanel(db: DB, u: UsuarioSesion) {
         cantidad: porAtender!.n,
         urgencia: 'ALTA',
         pantalla: 'pedidos',
+      });
+    }
+  }
+
+  // Citas: las de hoy y las que falta confirmar (hoy y mañana).
+  if (tienePermiso(u.rol, 'citas.gestionar')) {
+    const c = await resumenCitas(db, u.sucursalId);
+    if (c.porConfirmar > 0) {
+      tarea({
+        clave: 'citas-por-confirmar',
+        titulo: plural(c.porConfirmar, 'cita por confirmar', 'citas por confirmar'),
+        detalle: 'Reservadas para hoy o mañana: llama o escribe al cliente para confirmarlas.',
+        cantidad: c.porConfirmar,
+        urgencia: 'MEDIA',
+        pantalla: 'agenda',
+      });
+    }
+    if (c.hoy > 0) {
+      tarea({
+        clave: 'citas-hoy',
+        titulo: plural(c.hoy, 'cita hoy', 'citas hoy'),
+        detalle: 'Revisa la agenda y marca cada una como atendida o no asistió.',
+        cantidad: c.hoy,
+        urgencia: u.rol === 'OPTOMETRISTA' ? 'ALTA' : 'INFO',
+        pantalla: 'agenda',
       });
     }
   }

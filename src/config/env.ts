@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { cargarEntorno } from './cargar-entorno.js';
+import { leerHorario } from '../lib/horario.js';
 
 const APP_ENV = cargarEntorno();
 
@@ -35,6 +36,25 @@ const comun = z.object({
   STRIPE_MONEDA: z.string().regex(/^[a-z]{3}$/).default('bob'),
   /** Bolivianos por 1 unidad de STRIPE_MONEDA (solo si no es bob). Ej.: 6.96 para usd. */
   STRIPE_TIPO_CAMBIO: z.coerce.number().positive().default(1),
+
+  /* Citas para examen de la vista */
+  /** Horario de atención: "lun-vie 09:00-13:00 15:00-19:00; sab 09:00-13:00". */
+  CITAS_HORARIO: z
+    .string()
+    .default('lun-vie 09:00-13:00 15:00-19:00; sab 09:00-13:00')
+    .refine((v) => {
+      try {
+        return leerHorario(v).size > 0;
+      } catch {
+        return false;
+      }
+    }, 'Horario inválido. Ejemplo: "lun-vie 09:00-13:00 15:00-19:00; sab 09:00-13:00"'),
+  /** Minutos por cita. */
+  CITAS_DURACION: z.coerce.number().int().min(10).max(180).default(30),
+  /** Citas al mismo tiempo (cuántos optometristas atienden a la vez). */
+  CITAS_CUPOS: z.coerce.number().int().min(1).max(20).default(1),
+  /** Hasta cuántos días adelante se puede reservar. */
+  CITAS_DIAS_ADELANTE: z.coerce.number().int().min(1).max(120).default(30),
 
   /* Cloudinary: fotos de productos. Es la "API environment variable" del dashboard:
      cloudinary://API_KEY:API_SECRET@CLOUD_NAME. Sin ella, no se pueden subir fotos. */
