@@ -23,6 +23,8 @@ import { rutasTienda, webhookStripe } from './modules/tienda/routes.js';
 import { pasarelaDesdeEntorno, type PasarelaPagos } from './lib/pagos.js';
 import { almacenDesdeEntorno, type AlmacenFotos } from './lib/fotos.js';
 import { correoDesdeEntorno, type Correo } from './lib/correo.js';
+import { fuenteGitHub, PLATAFORMAS, Versiones, type FuenteVersiones } from './lib/versiones.js';
+import { exigirVersion } from './middleware/version-app.js';
 import { crearAvisos } from './modules/tienda/avisos.js';
 
 export type OpcionesApp = {
@@ -32,11 +34,17 @@ export type OpcionesApp = {
   fotos?: AlmacenFotos | null;
   /** Envío de correos; por defecto Resend si RESEND_API_KEY está definida. */
   correo?: Correo | null;
+  /** De dónde se leen las versiones publicadas de las apps; por defecto GitHub Releases (null = sin bloqueo). */
+  versiones?: FuenteVersiones | null;
 };
 
 export function crearApp(db: DB, opciones: OpcionesApp = {}) {
   const pagos = opciones.pagos === undefined ? pasarelaDesdeEntorno() : opciones.pagos;
   const fotos = opciones.fotos === undefined ? almacenDesdeEntorno() : opciones.fotos;
+  const fuente = opciones.versiones === undefined ? (env.APP_ENV === 'test' ? null : fuenteGitHub()) : opciones.versiones;
+  const versiones = new Versiones(fuente ?? (async () => null));
+  // Se consulta apenas arranca, para que el bloqueo funcione desde la primera petición.
+  if (fuente) for (const p of PLATAFORMAS) versiones.conocida(p);
   const avisos = crearAvisos(db, opciones.correo === undefined ? correoDesdeEntorno() : opciones.correo);
   const app = express();
   app.disable('x-powered-by');
@@ -56,6 +64,13 @@ export function crearApp(db: DB, opciones: OpcionesApp = {}) {
   const api = Router();
   // Registra cada operación que modifica datos (también intentos negados y logins fallidos).
   api.use(auditoria(db));
+  // Última versión publicada de cada app (público: las apps lo consultan antes de ingresar).
+  api.get('/actualizaciones', async (_req, res) => {
+    const [escritorio, android] = await Promise.all([versiones.ultima('escritorio'), versiones.ultima('android')]);
+    res.set('Cache-Control', 'no-store').json({ obligatoria: env.ACTUALIZACION_OBLIGATORIA, escritorio, android });
+  });
+  // Las apps con una versión anterior a la publicada no pueden seguir (ni ingresar) hasta actualizar.
+  api.use(exigirVersion(versiones));
   api.use('/auth', rutasAuth(db));
   // Tienda web para clientes: catálogo público y cuentas de clientes (con su propio token).
   api.use('/tienda', rutasTienda(db, pagos, avisos));

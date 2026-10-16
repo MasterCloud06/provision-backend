@@ -56,6 +56,14 @@ const comun = z.object({
   /** Hasta cuántos días adelante se puede reservar. */
   CITAS_DIAS_ADELANTE: z.coerce.number().int().min(1).max(120).default(30),
 
+  /* Actualizaciones de las apps: la última versión publicada se lee de GitHub Releases. */
+  /** true = las apps con una versión anterior a la publicada no pueden usar el sistema hasta actualizar. */
+  ACTUALIZACION_OBLIGATORIA: z.enum(['true', 'false']).default('true').transform((v) => v === 'true'),
+  REPO_ESCRITORIO: z.string().regex(/^[\w.-]+\/[\w.-]+$/).default('MasterCloud06/provision-desktop'),
+  REPO_ANDROID: z.string().regex(/^[\w.-]+\/[\w.-]+$/).default('MasterCloud06/provision-app'),
+  /** Opcional: token de GitHub (solo lectura) para más consultas por hora o repos privados. */
+  GITHUB_TOKEN: z.string().optional(),
+
   /* Correo (Resend): recuperar contraseña y avisos de pedidos y citas. Sin RESEND_API_KEY no se envían correos. */
   RESEND_API_KEY: z.string().startsWith('re_').optional(),
   /** Remitente. Sin dominio verificado en Resend, solo funciona onboarding@resend.dev (y solo hacia tu propio correo). */

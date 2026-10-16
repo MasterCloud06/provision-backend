@@ -238,6 +238,12 @@ Los clientes reservan desde la tienda web y el personal ve la agenda en el escri
 | `CITAS_CUPOS` | `1` (citas al mismo tiempo) |
 | `CITAS_DIAS_ADELANTE` | `30` |
 
+### Actualización obligatoria de las apps
+
+Cada compilación del escritorio y de Android se publica en GitHub Releases con un número que siempre sube (`escritorio-41`, `v0.1.0-23`). El backend lee la última de cada una (`REPO_ESCRITORIO`, `REPO_ANDROID`, con caché de 5 minutos) y la publica en `GET /actualizaciones`.
+
+Las apps envían `X-Provision-App: escritorio/41` (o `android/23`) en cada petición. Si es anterior a la última publicada, el backend responde **426 `ACTUALIZACION_REQUERIDA`** —también al ingresar— y la app muestra la pantalla para actualizar. No se bloquea: la tienda web, las compilaciones de desarrollo (número 0) ni a nadie si GitHub no responde. Para apagarlo: `ACTUALIZACION_OBLIGATORIA=false`. Si los repos fueran privados, define `GITHUB_TOKEN` (solo lectura); los celulares igual necesitan poder descargar la APK, por eso `provision-app` debe ser público.
+
 ### Correos a clientes (Resend)
 
 Con `RESEND_API_KEY` la tienda envía correos: **recuperar contraseña**, **pedido recibido** (pago al retirar), **pago recibido** (tarjeta), **pedido listo para retirar / enviado**, **pedido cancelado** (con el motivo y si se devolvió el dinero) y **cita reservada**. Los correos nunca frenan ni hacen fallar la operación: si el envío falla, queda en el log. Sin la llave no se envía nada y "Olvidé mi contraseña" dice que se comuniquen con la óptica (`GET /tienda/info` → `recuperacionPorCorreo`).
