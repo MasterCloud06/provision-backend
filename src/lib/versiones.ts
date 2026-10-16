@@ -22,36 +22,57 @@ export function compilacionDe(etiqueta: string): number | null {
   return m ? Number(m[1]) : null;
 }
 
-type Release = { tag_name: string; name: string | null; body: string | null; published_at: string; draft: boolean; prerelease: boolean; assets: { name: string; browser_download_url: string; size: number }[] };
+/** Nombre fijo del archivo que cada compilación publica en su versión. */
+export const ARCHIVO: Record<Plataforma, string> = { escritorio: 'Provision.exe', android: 'provision.apk' };
 
+type Release = { tag_name: string; name: string | null; body: string | null; published_at: string; assets: { name: string; browser_download_url: string; size: number }[] };
+
+/**
+ * Última versión publicada en GitHub Releases.
+ * Sin token se usa la página pública (github.com/…/releases/latest redirige a la etiqueta), que no tiene
+ * el límite de 60 consultas por hora de la API: en Render ese límite se comparte con otros servicios.
+ * Con GITHUB_TOKEN se usa la API (más datos: tamaño y notas; sirve para repos privados).
+ */
 export function fuenteGitHub(): FuenteVersiones {
-  const repos: Record<Plataforma, { repo: string; ext: string }> = {
-    escritorio: { repo: env.REPO_ESCRITORIO, ext: '.exe' },
-    android: { repo: env.REPO_ANDROID, ext: '.apk' },
-  };
+  const repos: Record<Plataforma, string> = { escritorio: env.REPO_ESCRITORIO, android: env.REPO_ANDROID };
   return async (p) => {
-    const { repo, ext } = repos[p];
-    const r = await fetch(`https://api.github.com/repos/${repo}/releases/latest`, {
-      headers: {
-        Accept: 'application/vnd.github+json',
-        'User-Agent': 'provision-backend',
-        ...(env.GITHUB_TOKEN ? { Authorization: `Bearer ${env.GITHUB_TOKEN}` } : {}),
-      },
+    const repo = repos[p];
+    const archivo = ARCHIVO[p];
+    if (env.GITHUB_TOKEN) {
+      const r = await fetch(`https://api.github.com/repos/${repo}/releases/latest`, {
+        headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'provision-backend', Authorization: `Bearer ${env.GITHUB_TOKEN}` },
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (r.status === 404) return null;
+      if (!r.ok) throw new Error(`GitHub ${r.status} al leer ${repo}`);
+      const rel = (await r.json()) as Release;
+      const a = rel.assets.find((x) => x.name === archivo);
+      const compilacion = compilacionDe(rel.tag_name);
+      if (!a || compilacion == null) return null;
+      return { compilacion, version: rel.name ?? rel.tag_name, url: a.browser_download_url, tamano: a.size, notas: rel.body, publicadaEn: rel.published_at };
+    }
+    const r = await fetch(`https://github.com/${repo}/releases/latest`, {
+      redirect: 'manual',
+      headers: { 'User-Agent': 'provision-backend' },
       signal: AbortSignal.timeout(10_000),
     });
-    if (r.status === 404) return null; // sin versiones publicadas (o repo privado sin token)
-    if (!r.ok) throw new Error(`GitHub ${r.status} al leer ${repo}`);
-    const rel = (await r.json()) as Release;
-    const archivo = rel.assets.find((a) => a.name.toLowerCase().endsWith(ext));
-    const compilacion = compilacionDe(rel.tag_name);
-    if (!archivo || compilacion == null) return null;
+    // Sin versiones publicadas (o repo privado) GitHub responde 404, o redirige a la lista de releases.
+    const destino = r.headers.get('location') ?? '';
+    const etiqueta = destino.match(/\/releases\/tag\/([^/?#]+)$/)?.[1];
+    if (r.status === 404 || !etiqueta) {
+      if (r.status >= 500) throw new Error(`GitHub ${r.status} al leer ${repo}`);
+      return null;
+    }
+    const tag = decodeURIComponent(etiqueta);
+    const compilacion = compilacionDe(tag);
+    if (compilacion == null) return null;
     return {
       compilacion,
-      version: rel.name ?? rel.tag_name,
-      url: archivo.browser_download_url,
-      tamano: archivo.size,
-      notas: rel.body,
-      publicadaEn: rel.published_at,
+      version: tag,
+      url: `https://github.com/${repo}/releases/download/${encodeURIComponent(tag)}/${archivo}`,
+      tamano: null,
+      notas: null,
+      publicadaEn: new Date().toISOString(),
     };
   };
 }

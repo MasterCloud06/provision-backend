@@ -240,7 +240,7 @@ Los clientes reservan desde la tienda web y el personal ve la agenda en el escri
 
 ### Actualización obligatoria de las apps
 
-Cada compilación del escritorio y de Android se publica en GitHub Releases con un número que siempre sube (`escritorio-41`, `v0.1.0-23`). El backend lee la última de cada una (`REPO_ESCRITORIO`, `REPO_ANDROID`, con caché de 5 minutos) y la publica en `GET /actualizaciones`.
+Cada compilación del escritorio y de Android se publica en GitHub Releases con un número que siempre sube (`escritorio-41`, `v0.1.0-23`) y un archivo de nombre fijo (`Provision.exe`, `provision.apk`). El backend lee la última de cada una (`REPO_ESCRITORIO`, `REPO_ANDROID`, con caché de 5 minutos) desde la página pública de GitHub, que no tiene el límite de consultas de la API, y la publica en `GET /actualizaciones`.
 
 Las apps envían `X-Provision-App: escritorio/41` (o `android/23`) en cada petición. Si es anterior a la última publicada, el backend responde **426 `ACTUALIZACION_REQUERIDA`** —también al ingresar— y la app muestra la pantalla para actualizar. No se bloquea: la tienda web, las compilaciones de desarrollo (número 0) ni a nadie si GitHub no responde. Para apagarlo: `ACTUALIZACION_OBLIGATORIA=false`. Si los repos fueran privados, define `GITHUB_TOKEN` (solo lectura); los celulares igual necesitan poder descargar la APK, por eso `provision-app` debe ser público.
 
