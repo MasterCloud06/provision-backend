@@ -182,3 +182,36 @@ describe('roles y permisos', () => {
     expect((await u.LABORATORIO!.get('/ordenes-trabajo')).status).toBe(401);
   });
 });
+
+describe('bloqueo por intentos fallidos', () => {
+  it('5 contraseñas incorrectas bloquean la cuenta, aunque luego pongan la correcta', async () => {
+    const e = await entornoDePrueba();
+    try {
+      const intentar = (password: string) => e.como('').post('/auth/login', { email: 'admin@prueba.bo', password });
+      for (let i = 0; i < 5; i++) expect((await intentar('mala-clave')).status).toBe(401);
+      const bloqueado = await intentar('ClaveDePrueba123');
+      expect(bloqueado.status).toBe(429);
+      expect(bloqueado.body.error.codigo).toBe('CUENTA_BLOQUEADA');
+      const ev = await e.admin.get('/auditoria/eventos?resultado=FALLIDO');
+      expect(JSON.stringify(ev.body)).toContain('Ingreso bloqueado');
+    } finally {
+      await e.cerrar();
+    }
+  });
+
+  it('el bloqueo vence solo y un ingreso correcto reinicia la cuenta', async () => {
+    const { BloqueoIntentos } = await import('../src/lib/bloqueo.js');
+    let t = 0;
+    const b = new BloqueoIntentos(3, 60_000, 60_000, () => t);
+    b.fallo('a');
+    b.fallo('a');
+    b.exito('a');
+    b.fallo('a');
+    b.fallo('a');
+    expect(() => b.verificar('a')).not.toThrow();
+    b.fallo('a');
+    expect(() => b.verificar('a')).toThrow(/Espera 1 minuto/);
+    t = 61_000;
+    expect(() => b.verificar('a')).not.toThrow();
+  });
+});

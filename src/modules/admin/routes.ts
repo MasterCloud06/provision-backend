@@ -10,6 +10,9 @@ import { GUIA_ROLES } from '../../lib/guia-roles.js';
 import { NOMBRE_ROL, PERMISOS_POR_ROL, ROLES, ROLES_PROTEGIDOS, tienePermiso, type Rol } from '../../lib/permisos.js';
 import { autenticar, firmarToken, requierePermiso } from '../../middleware/auth.js';
 import { crearCategoriasPorDefecto } from '../finanzas/servicio.js';
+import { rateLimit } from 'express-rate-limit';
+import { env } from '../../config/env.js';
+import { BloqueoIntentos } from '../../lib/bloqueo.js';
 
 const HASH_FALSO = bcrypt.hashSync('provision-hash-falso', 10);
 
@@ -30,15 +33,32 @@ const columnasPublicas = {
   creadoEn: usuarios.creadoEn,
 };
 
-export function rutasAuth(db: DB) {
+export function rutasAuth(db: DB, bloqueo = new BloqueoIntentos()) {
   const r = Router();
 
-  r.post('/login', async (req, res) => {
+  // Por IP: frena a quien prueba muchas cuentas desde el mismo lugar.
+  const limitePorIp = rateLimit({
+    windowMs: 15 * 60_000,
+    limit: 40,
+    standardHeaders: 'draft-8',
+    legacyHeaders: false,
+    skip: () => env.APP_ENV === 'test',
+    handler: (_req, res) =>
+      void res.status(429).json({ error: { codigo: 'DEMASIADOS_INTENTOS', mensaje: 'Demasiados intentos de ingreso desde esta conexión. Espera unos minutos.' } }),
+  });
+
+  r.post('/login', limitePorIp, async (req, res) => {
     const datos = body(req, z.object({ email: z.string().trim().toLowerCase(), password: z.string() }));
+    // Por cuenta: 5 contraseñas incorrectas seguidas la bloquean 15 minutos.
+    bloqueo.verificar(datos.email);
     const [u] = await db.select().from(usuarios).where(eq(usuarios.email, datos.email));
     // Se compara siempre para no revelar por tiempo si el email existe.
     const ok = await bcrypt.compare(datos.password, u?.passwordHash ?? HASH_FALSO);
-    if (!u || !ok || !u.activo) throw noAutorizado('Email o contraseña incorrectos');
+    if (!u || !ok || !u.activo) {
+      if (!ok) bloqueo.fallo(datos.email);
+      throw noAutorizado('Email o contraseña incorrectos');
+    }
+    bloqueo.exito(datos.email);
     const { passwordHash: _, ...publico } = u;
     res.json({ token: firmarToken(u.id), usuario: conPermisos(publico) });
   });

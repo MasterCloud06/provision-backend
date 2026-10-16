@@ -130,7 +130,7 @@ function normalizar(url: string) {
 function resultadoDe(status: number, ruta: string): Resultado | null {
   if (status < 400) return 'EXITO';
   if (status === 403) return 'DENEGADO';
-  if (status === 401 && ruta === '/auth/login') return 'FALLIDO';
+  if ((status === 401 || status === 429) && ruta === '/auth/login') return 'FALLIDO';
   if (status === 409 || status === 422) return 'RECHAZADO';
   if (status >= 500) return 'ERROR';
   return null; // 400 de validación, 404: ruido, no se registran
@@ -169,7 +169,10 @@ export function auditoria(db: DB): RequestHandler {
         if (resultado === 'EXITO') {
           descripcion = regla.detalle?.(respuesta ?? {}, enviado) ?? regla.titulo;
         } else if (resultado === 'FALLIDO') {
-          descripcion = `Intento de ingreso fallido con ${String(enviado.email ?? '').slice(0, 120)}`;
+          descripcion =
+            res.statusCode === 429
+              ? `Ingreso bloqueado por demasiados intentos con ${String(enviado.email ?? '').slice(0, 120)}`
+              : `Intento de ingreso fallido con ${String(enviado.email ?? '').slice(0, 120)}`;
         } else {
           descripcion = `${regla.titulo}: ${respuesta?.error?.mensaje ?? `error ${res.statusCode}`}`;
         }

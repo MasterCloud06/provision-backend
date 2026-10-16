@@ -9,6 +9,7 @@ import type { DB } from '../../db/client.js';
 import { clientes, cuentasTienda } from '../../db/schema/index.js';
 import { AppError, conflicto, noAutorizado } from '../../lib/errors.js';
 import { body } from '../../lib/http.js';
+import { BloqueoIntentos } from '../../lib/bloqueo.js';
 
 /** Los tokens de clientes llevan esta audiencia: el sistema interno los rechaza. */
 export const AUDIENCIA_TIENDA = 'tienda';
@@ -81,7 +82,7 @@ async function perfil(db: DB, cuentaId: string) {
 }
 
 /** Registro e ingreso de clientes (público). */
-export function rutasAuthTienda(db: DB) {
+export function rutasAuthTienda(db: DB, bloqueo = new BloqueoIntentos()) {
   const r = Router();
 
   r.post('/registro', async (req, res) => {
@@ -113,9 +114,14 @@ export function rutasAuthTienda(db: DB) {
 
   r.post('/login', async (req, res) => {
     const d = body(req, z.object({ email: z.string().trim().toLowerCase(), password: z.string() }));
+    bloqueo.verificar(d.email);
     const [c] = await db.select().from(cuentasTienda).where(eq(cuentasTienda.email, d.email));
     const ok = await bcrypt.compare(d.password, c?.passwordHash ?? HASH_FALSO);
-    if (!c || !ok) throw noAutorizado('Correo o contraseña incorrectos');
+    if (!c || !ok) {
+      bloqueo.fallo(d.email);
+      throw noAutorizado('Correo o contraseña incorrectos');
+    }
+    bloqueo.exito(d.email);
     if (!c.activa) throw noAutorizado('Tu cuenta está desactivada. Comunícate con la óptica.');
     res.json({ token: firmarTokenCliente(c.id), cuenta: await perfil(db, c.id) });
   });
