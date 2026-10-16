@@ -209,7 +209,11 @@ Los clientes solo ven productos **activos** y con `visibleTienda = true` (por de
 
 ### Pedidos web (personal)
 - `GET /pedidos-web?estado=POR_ATENDER|…&q=` · `GET /pedidos-web/:id` (con `siguientes`: los estados posibles)
-- `POST /pedidos-web/:id/estado` — `PAGADO → PREPARANDO → LISTO` (retiro) o `ENVIADO` (envío) `→ ENTREGADO`. Con pago al retirar se cobra al entregar.
+- `GET /pedidos-web` también devuelve `conteos` por estado (y `POR_ATENDER`) para las pestañas de las apps
+- `POST /pedidos-web/:id/estado` — `PAGADO → PREPARANDO → LISTO` (retiro) o `ENVIADO` (envío) `→ ENTREGADO`.
+  - **Al entregar, el pedido se registra como venta** (`V-MAT-…`, con la nota del pedido): cuenta en reportes, margen y más vendidos. El stock no se vuelve a descontar.
+  - **Pago al retirar:** al entregar se envía `pagos: [{ metodo, monto, referencia? }]` por el total y se cobra en la **caja abierta** (solo quien tiene `caja.operar`). `GET /pedidos-web/:id` indica `cobrarAlEntregar`.
+  - **Pagado con tarjeta:** la venta queda pagada con la fecha del pago; ese dinero va al banco por Stripe, no a la caja.
 - `POST /pedidos-web/:id/cancelar` `{ motivo }` — devuelve el stock y, si se pagó con tarjeta, **reembolsa en Stripe**
 - `POST /pedidos-web/:id/notas` — notas internas (el cliente no las ve)
 

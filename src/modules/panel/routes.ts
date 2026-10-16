@@ -24,7 +24,7 @@ import { resumenSesion } from '../caja/servicio.js';
 
 type Urgencia = 'ALTA' | 'MEDIA' | 'INFO' | 'OK';
 /** Claves de pantalla que la app usa para llevar al usuario donde se hace la tarea. */
-type Pantalla = 'panel' | 'indicadores' | 'auditoria' | 'vender' | 'ventas' | 'caja' | 'laboratorio' | 'clientes' | 'inventario' | 'usuarios';
+type Pantalla = 'panel' | 'indicadores' | 'auditoria' | 'vender' | 'ventas' | 'caja' | 'laboratorio' | 'clientes' | 'inventario' | 'usuarios' | 'pedidos';
 
 type Tarea = { clave: string; titulo: string; detalle: string; cantidad: number | null; urgencia: Urgencia; pantalla: Pantalla | null };
 type Indicador = { titulo: string; valor: string; detalle?: string };
@@ -324,7 +324,7 @@ async function armarPanel(db: DB, u: UsuarioSesion) {
         detalle: 'Clientes que compraron en la tienda en línea: prepara sus productos y avísales.',
         cantidad: porAtender!.n,
         urgencia: 'ALTA',
-        pantalla: null,
+        pantalla: 'pedidos',
       });
     }
   }

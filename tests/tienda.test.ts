@@ -182,9 +182,38 @@ describe('tienda web', () => {
 
     expect((await caja.post(`/pedidos-web/${id}/estado`, { estado: 'ENVIADO' })).status).toBe(409);
     expect((await caja.post(`/pedidos-web/${id}/estado`, { estado: 'LISTO', nota: 'En vitrina 2' })).status).toBe(200);
-    const entregado = await caja.post(`/pedidos-web/${id}/estado`, { estado: 'ENTREGADO' });
+    // Entregar un pedido con pago al retirar exige cobrarlo en caja
+    expect((await caja.get(`/pedidos-web/${id}`)).body.cobrarAlEntregar).toBe(true);
+    expect((await caja.post(`/pedidos-web/${id}/estado`, { estado: 'ENTREGADO' })).status).toBe(422);
+    const sinCaja = await caja.post(`/pedidos-web/${id}/estado`, { estado: 'ENTREGADO', pagos: [{ metodo: 'EFECTIVO', monto: 133000 }] });
+    expect(sinCaja.status).toBe(422);
+    expect(sinCaja.body.error.mensaje).toMatch(/caja abierta/);
+    await caja.post('/caja/abrir', { montoApertura: 10000 });
+    expect((await caja.post(`/pedidos-web/${id}/estado`, { estado: 'ENTREGADO', pagos: [{ metodo: 'EFECTIVO', monto: 100000 }] })).status).toBe(422);
+    const entregado = await caja.post(`/pedidos-web/${id}/estado`, {
+      estado: 'ENTREGADO',
+      pagos: [
+        { metodo: 'EFECTIVO', monto: 100000 },
+        { metodo: 'QR', monto: 33000, referencia: 'QR-778' },
+      ],
+    });
+    expect(entregado.status).toBe(200);
     expect(entregado.body.estado).toBe('ENTREGADO');
     expect(entregado.body.pagadoEn).not.toBeNull();
+    // Quedó como venta pagada, con el cobro en la caja
+    const det2 = await caja.get(`/pedidos-web/${id}`);
+    expect(det2.body.ventaNumero).toMatch(/^V-MAT-/);
+    const venta = (await caja.get(`/ventas/${entregado.body.ventaId}`)).body;
+    expect(venta).toMatchObject({ total: 133000, pagado: 133000, saldo: 0, estadoPago: 'PAGADA' });
+    expect(venta.notas).toContain('W-MAT-000001');
+    const cajaActual = (await caja.get('/caja/actual')).body;
+    expect(cajaActual.efectivoEsperado).toBe(10000 + 100000);
+    expect(cajaActual.porMetodo.QR.ingresos).toBe(33000);
+    // El stock no se descontó dos veces
+    expect(await stockDe(ids['MON-RB5154-NEG'])).toBe(3);
+    // Y cuenta en los reportes
+    const rep = (await e.admin.get('/reportes/dashboard')).body;
+    expect(rep.hoy.monto).toBeGreaterThanOrEqual(133000);
     expect((await cli(tk).get(`/pedidos/${id}`)).body.notasInternas).toBeUndefined();
 
     // Un optometrista no atiende pedidos web
@@ -229,6 +258,8 @@ describe('tienda web', () => {
 
     // Ya pagado: el cliente no lo cancela; el personal sí, con reembolso y devolución de stock.
     expect((await cli(tk).post(`/pedidos/${id}/cancelar`)).status).toBe(422);
+    // Un pedido con tarjeta se entrega sin cobrar en caja y queda como venta pagada
+    expect((await e.admin.get(`/pedidos-web/${id}`)).body.cobrarAlEntregar).toBe(false);
     const c = await e.admin.post(`/pedidos-web/${id}/cancelar`, { motivo: 'Sin stock de color' });
     expect(c.status).toBe(200);
     expect(c.body.canceladoMotivo).toContain('reembolsado');
@@ -262,6 +293,17 @@ describe('tienda web', () => {
     const sId = [...falsa.sesiones.values()].find((s) => s.pedidoId === b.body.pedido.id)!.id;
     await pub().post('/api/v1/tienda/stripe/webhook').set('stripe-signature', 'firma-valida').set('content-type', 'application/json').send(JSON.stringify({ tipo: 'pagado', sesion: sId }));
     expect((await cli(tk).get(`/pedidos/${b.body.pedido.id}`)).body.estado).toBe('PAGADO');
+    expect(await stockDe(ids['MON-VIT-2201-CAR'])).toBe(7);
+
+    // Pagado con tarjeta: se entrega sin pasar por caja y queda como venta pagada
+    const antes = (await e.admin.get('/caja/actual')).body.totalIngresos;
+    await e.admin.post(`/pedidos-web/${b.body.pedido.id}/estado`, { estado: 'LISTO' });
+    const ent = await e.admin.post(`/pedidos-web/${b.body.pedido.id}/estado`, { estado: 'ENTREGADO' });
+    expect(ent.status).toBe(200);
+    const vb = (await e.admin.get(`/ventas/${ent.body.ventaId}`)).body;
+    expect(vb).toMatchObject({ total: 135000, pagado: 135000, saldo: 0 });
+    expect(vb.notas).toContain('Stripe');
+    expect((await e.admin.get('/caja/actual')).body.totalIngresos).toBe(antes);
     expect(await stockDe(ids['MON-VIT-2201-CAR'])).toBe(7);
 
     const mios = await cli(tk).get('/pedidos');

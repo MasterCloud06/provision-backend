@@ -37,7 +37,8 @@ export type NuevaVenta = {
 const estadoPagoDe = (total: number, pagado: number) =>
   pagado >= total ? ('PAGADA' as const) : pagado > 0 ? ('PARCIAL' as const) : ('PENDIENTE' as const);
 
-async function cobrar(
+/** Registra los pagos en la caja abierta de la sucursal (también lo usan los pedidos web al entregarse). */
+export async function cobrar(
   tx: Exec,
   venta: { id: string; numero: string; sucursalId: string },
   lista: PagoEntrada[],

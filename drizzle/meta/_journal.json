@@ -29,6 +29,13 @@
       "when": 1792096143169,
       "tag": "0003_tienda_web",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1792114257036,
+      "tag": "0004_pedido_web_venta",
+      "breakpoints": true
     }
   ]
 }

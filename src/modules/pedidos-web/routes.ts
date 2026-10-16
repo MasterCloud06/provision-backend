@@ -7,7 +7,10 @@ import { conflicto, noEncontrado, reglaNegocio } from '../../lib/errors.js';
 import { body, offset, paginacion, param, query, usuarioDe } from '../../lib/http.js';
 import type { PasarelaPagos } from '../../lib/pagos.js';
 import { requierePermiso } from '../../middleware/auth.js';
-import { cancelarPedido, conteoItems, liberarVencidos, pedidoConItems, type EstadoPedido } from '../tienda/servicio.js';
+import { cancelarPedido, conteoItems, liberarVencidos, pedidoConItems, registrarVentaDePedido, type EstadoPedido } from '../tienda/servicio.js';
+import { metodoPago, ventas } from '../../db/schema/index.js';
+import { centavosPositivo, puede } from '../../lib/http.js';
+import { prohibido } from '../../lib/errors.js';
 
 /** Activos: los que el personal todavía tiene que atender. */
 export const ESTADOS_POR_ATENDER: EstadoPedido[] = ['PAGADO', 'PREPARANDO', 'LISTO', 'ENVIADO'];
@@ -92,7 +95,20 @@ export function rutasPedidosWeb(db: DB, pasarela: PasarelaPagos | null) {
       db.select({ total: count() }).from(pedidosWeb).innerJoin(cuentasTienda, eq(cuentasTienda.id, pedidosWeb.cuentaId)).where(where),
     ]);
     const n = await conteoItems(db, datos.map((p) => p.id));
-    res.json({ datos: datos.map((p) => ({ ...p, unidades: n.get(p.id) ?? 0 })), total: conteo!.total, pagina: f.pagina, porPagina: f.porPagina });
+    // Cuántos hay en cada estado, para las pestañas de las apps.
+    const porEstado = await db.select({ estado: pedidosWeb.estado, n: count() }).from(pedidosWeb).groupBy(pedidosWeb.estado);
+    const conteos = Object.fromEntries(porEstado.map((e) => [e.estado, e.n]));
+    const [porAtender] = await db
+      .select({ n: count() })
+      .from(pedidosWeb)
+      .where(or(inArray(pedidosWeb.estado, ESTADOS_POR_ATENDER), and(eq(pedidosWeb.estado, 'PENDIENTE_PAGO'), eq(pedidosWeb.metodoPago, 'EN_TIENDA'))));
+    res.json({
+      datos: datos.map((p) => ({ ...p, unidades: n.get(p.id) ?? 0 })),
+      total: conteo!.total,
+      pagina: f.pagina,
+      porPagina: f.porPagina,
+      conteos: { ...conteos, POR_ATENDER: porAtender!.n },
+    });
   });
 
   r.get('/:id', async (req, res) => {
@@ -103,13 +119,32 @@ export function rutasPedidosWeb(db: DB, pasarela: PasarelaPagos | null) {
       .from(clientes)
       .innerJoin(cuentasTienda, eq(cuentasTienda.clienteId, clientes.id))
       .where(eq(cuentasTienda.id, p.cuentaId));
-    res.json({ ...p, cliente, siguientes: siguientes(p) });
+    const [venta] = p.ventaId ? await db.select({ numero: ventas.numero }).from(ventas).where(eq(ventas.id, p.ventaId)) : [];
+    res.json({
+      ...p,
+      cliente,
+      siguientes: siguientes(p),
+      ventaNumero: venta?.numero ?? null,
+      // Al entregar un pedido con pago al retirar hay que cobrarlo en caja.
+      cobrarAlEntregar: p.metodoPago === 'EN_TIENDA' && !p.pagadoEn,
+    });
   });
 
   /** Avanza el pedido: preparando → listo / enviado → entregado. */
   r.post('/:id/estado', async (req, res) => {
     const u = usuarioDe(req);
-    const d = body(req, z.object({ estado: z.enum(estadoPedidoWeb.enumValues), nota: z.string().trim().max(500).optional() }));
+    const d = body(
+      req,
+      z.object({
+        estado: z.enum(estadoPedidoWeb.enumValues),
+        nota: z.string().trim().max(500).optional(),
+        /** Al entregar un pedido con pago al retirar: cómo pagó el cliente (pueden ser varios métodos). */
+        pagos: z
+          .array(z.object({ metodo: z.enum(metodoPago.enumValues), monto: centavosPositivo, referencia: z.string().trim().max(80).nullish() }))
+          .max(4)
+          .optional(),
+      }),
+    );
     const actualizado = await db.transaction(async (tx) => {
       const [p] = await tx.select().from(pedidosWeb).where(eq(pedidosWeb.id, param(req))).for('update');
       if (!p) throw noEncontrado('Pedido');
@@ -121,11 +156,20 @@ export function rutasPedidosWeb(db: DB, pasarela: PasarelaPagos | null) {
             (permitidos.length ? ` (puede pasar a: ${permitidos.map((e) => NOMBRE_ESTADO[e]).join(', ')})` : ''),
         );
       }
+      // Entregar: se registra la venta (reportes) y, si paga al retirar, se cobra en la caja abierta.
+      let ventaId = p.ventaId;
+      if (d.estado === 'ENTREGADO' && !ventaId) {
+        const cobra = p.metodoPago === 'EN_TIENDA' && !p.pagadoEn;
+        if (cobra && !puede(req, 'caja.operar')) throw prohibido('Este pedido se paga al retirar: lo entrega quien opera la caja');
+        if (cobra && !d.pagos?.length) throw reglaNegocio('Indica cómo pagó el cliente para cobrar el pedido en caja');
+        ventaId = (await registrarVentaDePedido(tx, p, u, cobra ? d.pagos! : null)).id;
+      }
       const [fila] = await tx
         .update(pedidosWeb)
         .set({
           estado: d.estado,
           atendidoPor: u.id,
+          ventaId,
           // Pago al retirar: ya no vence una vez que el personal lo toma; se cobra al entregar.
           expiraEn: null,
           ...(d.estado === 'ENTREGADO' && !p.pagadoEn ? { pagadoEn: new Date() } : {}),

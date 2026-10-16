@@ -4,6 +4,7 @@ import { clientes } from './clientes.js';
 import { sucursales, timestamps, usuarios } from './core.js';
 import { entregaPedidoWeb, estadoPedidoWeb, metodoPagoWeb } from './enums.js';
 import { productos } from './inventario.js';
+import { ventas } from './ventas.js';
 
 /**
  * Cuenta de un cliente en la tienda web. Es distinta de `usuarios` (el personal):
@@ -74,6 +75,8 @@ export const pedidosWeb = pgTable(
     notasInternas: text(),
     canceladoMotivo: text(),
     atendidoPor: uuid().references(() => usuarios.id),
+    /** La venta que se registra al entregar el pedido: así cuenta en reportes, margen y (si se cobra en tienda) en caja. */
+    ventaId: uuid().references(() => ventas.id),
     ...timestamps,
   },
   (t) => [

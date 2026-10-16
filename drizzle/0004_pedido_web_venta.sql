@@ -1,0 +1,2 @@
+ALTER TABLE "pedidos_web" ADD COLUMN "venta_id" uuid;--> statement-breakpoint
+ALTER TABLE "pedidos_web" ADD CONSTRAINT "pedidos_web_venta_id_ventas_id_fk" FOREIGN KEY ("venta_id") REFERENCES "public"."ventas"("id") ON DELETE no action ON UPDATE no action;
