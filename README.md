@@ -200,7 +200,8 @@ Reglas: numeración correlativa por sucursal (`V-MAT-000001`, `OT-MAT-000001`); 
 Lo que usa [`provision-frontend`](https://github.com/MasterCloud06/provision-frontend). Los clientes tienen **su propia cuenta** (`cuentas_tienda`), separada del personal: su token lleva la audiencia `tienda` y el sistema interno lo rechaza. Al registrarse se crea su ficha en `clientes`, así el personal lo ve como a cualquier cliente.
 
 - Público: `GET /tienda/info` (sucursal, costo de envío, si hay pago en línea, categorías, marcas) · `GET /tienda/productos` (filtros `q`, `tipo`, `marcaId`, `genero`, `precioMin`, `precioMax`, `disponibles`, `orden`) · `GET /tienda/productos/:id` (con relacionados)
-- Cuenta: `POST /tienda/auth/registro` · `POST /tienda/auth/login` · `GET|PATCH /tienda/cuenta` · `POST /tienda/cuenta/password`
+- Cuenta: `POST /tienda/auth/registro` · `POST /tienda/auth/login` · `GET|PATCH /tienda/cuenta` · `POST /tienda/cuenta/password` (devuelve un token nuevo y cierra las demás sesiones)
+- Recuperar contraseña: `POST /tienda/auth/recuperar` `{ email }` (responde igual exista o no la cuenta) → correo con un enlace de un solo uso que vence en 1 hora → `POST /tienda/auth/restablecer` `{ token, password }` (cierra las demás sesiones e ingresa)
 - Carrito (en el servidor): `GET /tienda/carrito` · `PUT /tienda/carrito/:productoId` `{ cantidad }` (0 quita) · `DELETE /tienda/carrito[/:productoId]` · `POST /tienda/carrito/fusionar` (lo que armó sin sesión)
 - Pedidos: `POST /tienda/pedidos` `{ entrega: RETIRO|ENVIO, metodoPago: STRIPE|EN_TIENDA, … }` → `{ pedido, urlPago }` · `GET /tienda/pedidos[/:id]` · `POST /tienda/pedidos/:id/pagar` · `/verificar` · `/cancelar`
 - Webhook: `POST /tienda/stripe/webhook`
@@ -236,6 +237,14 @@ Los clientes reservan desde la tienda web y el personal ve la agenda en el escri
 | `CITAS_DURACION` | `30` (minutos) |
 | `CITAS_CUPOS` | `1` (citas al mismo tiempo) |
 | `CITAS_DIAS_ADELANTE` | `30` |
+
+### Correos a clientes (Resend)
+
+Con `RESEND_API_KEY` la tienda envía correos: **recuperar contraseña**, **pedido recibido** (pago al retirar), **pago recibido** (tarjeta), **pedido listo para retirar / enviado**, **pedido cancelado** (con el motivo y si se devolvió el dinero) y **cita reservada**. Los correos nunca frenan ni hacen fallar la operación: si el envío falla, queda en el log. Sin la llave no se envía nada y "Olvidé mi contraseña" dice que se comuniquen con la óptica (`GET /tienda/info` → `recuperacionPorCorreo`).
+
+1. Crea una cuenta en [resend.com](https://resend.com) y una **API Key** (`re_…`).
+2. En Render: `RESEND_API_KEY` y, cuando verifiques tu dominio en Resend, `CORREO_REMITENTE` (p. ej. `Óptica Provisión <tienda@tudominio.bo>`).
+3. Sin dominio verificado, Resend solo deja enviar desde `onboarding@resend.dev` **y solo a tu propio correo**: sirve para probar, no para clientes reales.
 
 ### Fotos (Cloudinary)
 

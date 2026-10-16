@@ -22,17 +22,22 @@ import { rutasCitas } from './modules/citas/routes.js';
 import { rutasTienda, webhookStripe } from './modules/tienda/routes.js';
 import { pasarelaDesdeEntorno, type PasarelaPagos } from './lib/pagos.js';
 import { almacenDesdeEntorno, type AlmacenFotos } from './lib/fotos.js';
+import { correoDesdeEntorno, type Correo } from './lib/correo.js';
+import { crearAvisos } from './modules/tienda/avisos.js';
 
 export type OpcionesApp = {
   /** Pasarela de pagos; por defecto la de las variables de entorno (null si Stripe no está configurado). */
   pagos?: PasarelaPagos | null;
   /** Dónde se guardan las fotos; por defecto Cloudinary si CLOUDINARY_URL está definida. */
   fotos?: AlmacenFotos | null;
+  /** Envío de correos; por defecto Resend si RESEND_API_KEY está definida. */
+  correo?: Correo | null;
 };
 
 export function crearApp(db: DB, opciones: OpcionesApp = {}) {
   const pagos = opciones.pagos === undefined ? pasarelaDesdeEntorno() : opciones.pagos;
   const fotos = opciones.fotos === undefined ? almacenDesdeEntorno() : opciones.fotos;
+  const avisos = crearAvisos(db, opciones.correo === undefined ? correoDesdeEntorno() : opciones.correo);
   const app = express();
   app.disable('x-powered-by');
   // Render (y cualquier proxy) pone la IP real del cliente en X-Forwarded-For.
@@ -40,7 +45,7 @@ export function crearApp(db: DB, opciones: OpcionesApp = {}) {
   app.use(helmet());
   app.use(cors({ origin: env.CORS_ORIGIN === '*' ? true : env.CORS_ORIGIN.split(',') }));
   // El webhook de Stripe necesita el cuerpo crudo para validar la firma: va antes de express.json().
-  app.post('/api/v1/tienda/stripe/webhook', ...webhookStripe(db, pagos));
+  app.post('/api/v1/tienda/stripe/webhook', ...webhookStripe(db, pagos, avisos));
   app.use(express.json({ limit: '1mb' }));
   if (env.LOG_HTTP) app.use(morgan(env.APP_ENV === 'local' ? 'dev' : 'combined'));
 
@@ -53,7 +58,7 @@ export function crearApp(db: DB, opciones: OpcionesApp = {}) {
   api.use(auditoria(db));
   api.use('/auth', rutasAuth(db));
   // Tienda web para clientes: catálogo público y cuentas de clientes (con su propio token).
-  api.use('/tienda', rutasTienda(db, pagos));
+  api.use('/tienda', rutasTienda(db, pagos, avisos));
 
   // Todo lo que sigue requiere sesión
   api.use(autenticar(db));
@@ -69,7 +74,7 @@ export function crearApp(db: DB, opciones: OpcionesApp = {}) {
   api.use('/finanzas', rutasFinanzas(db));
   api.use('/reportes', rutasReportes(db));
   api.use('/auditoria', rutasAuditoria(db));
-  api.use('/pedidos-web', rutasPedidosWeb(db, pagos));
+  api.use('/pedidos-web', rutasPedidosWeb(db, pagos, avisos));
   api.use('/citas', rutasCitas(db));
 
   app.use('/api/v1', api);

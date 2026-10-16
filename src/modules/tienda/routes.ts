@@ -9,6 +9,7 @@ import { citasActivasDeCuenta, disponibilidad, MOTIVOS, reservar } from '../cita
 import { AppError, noEncontrado, reglaNegocio } from '../../lib/errors.js';
 import { body, boolQuery, offset, param, query } from '../../lib/http.js';
 import type { PasarelaPagos } from '../../lib/pagos.js';
+import type { Avisos } from './avisos.js';
 import { autenticarCliente, clienteDe, rutasAuthTienda, rutasCuentaTienda } from './auth.js';
 import {
   cancelarPedido,
@@ -49,7 +50,7 @@ function exigirPasarela(p: PasarelaPagos | null): PasarelaPagos {
  * Webhook de Stripe. Va antes de express.json(): la firma se calcula sobre el cuerpo crudo.
  * Stripe reintenta si no respondemos 2xx, por eso los errores propios devuelven 500.
  */
-export function webhookStripe(db: DB, pasarela: PasarelaPagos | null): RequestHandler[] {
+export function webhookStripe(db: DB, pasarela: PasarelaPagos | null, avisos: Avisos): RequestHandler[] {
   return [
     express.raw({ type: 'application/json', limit: '1mb' }),
     async (req, res) => {
@@ -65,12 +66,12 @@ export function webhookStripe(db: DB, pasarela: PasarelaPagos | null): RequestHa
         return;
       }
       if (evento.tipo === 'pagado') {
-        await confirmarPago(db, evento.sesion);
+        await confirmarPago(db, evento.sesion, avisos);
       } else if (evento.tipo === 'vencido' && evento.sesion.pedidoId) {
         const [p] = await db.select().from(pedidosWeb).where(eq(pedidosWeb.id, evento.sesion.pedidoId));
         // Solo si es la sesión vigente del pedido (un "reintentar pago" crea otra).
         if (p?.estado === 'PENDIENTE_PAGO' && p.stripeSessionId === evento.sesion.id) {
-          await cancelarPedido(db, pasarela, p.id, 'No se completó el pago a tiempo', null);
+          await cancelarPedido(db, pasarela, p.id, 'No se completó el pago a tiempo', null, avisos);
         }
       }
       res.json({ recibido: true });
@@ -78,7 +79,7 @@ export function webhookStripe(db: DB, pasarela: PasarelaPagos | null): RequestHa
   ];
 }
 
-export function rutasTienda(db: DB, pasarela: PasarelaPagos | null) {
+export function rutasTienda(db: DB, pasarela: PasarelaPagos | null, avisos: Avisos) {
   const r = Router();
 
   // Frena ataques de fuerza bruta sobre contraseñas y registros masivos.
@@ -91,7 +92,7 @@ export function rutasTienda(db: DB, pasarela: PasarelaPagos | null) {
     handler: (_req, res) =>
       void res.status(429).json({ error: { codigo: 'DEMASIADOS_INTENTOS', mensaje: 'Demasiados intentos. Espera unos minutos y vuelve a probar.' } }),
   });
-  r.use('/auth', limite, rutasAuthTienda(db));
+  r.use('/auth', limite, rutasAuthTienda(db, avisos));
 
   /* ───────────── Catálogo público ───────────── */
 
@@ -112,6 +113,7 @@ export function rutasTienda(db: DB, pasarela: PasarelaPagos | null) {
       sucursal: { nombre: s.nombre, direccion: s.direccion, telefono: s.telefono },
       costoEnvio: env.TIENDA_COSTO_ENVIO,
       pagoEnLinea: pasarela != null,
+      recuperacionPorCorreo: avisos.habilitado,
       minutosReserva: env.TIENDA_MINUTOS_RESERVA,
       diasRetiro: env.TIENDA_DIAS_RETIRO,
       categorias,
@@ -254,6 +256,7 @@ export function rutasTienda(db: DB, pasarela: PasarelaPagos | null) {
       clienteId: c.clienteId,
       cuentaId: c.cuentaId,
     });
+    void avisos.citaReservada(cita.id);
     res.status(201).json(citaPublica(cita));
   });
 
@@ -494,6 +497,8 @@ export function rutasTienda(db: DB, pasarela: PasarelaPagos | null) {
         throw new AppError(502, 'PAGO_NO_INICIADO', 'No se pudo abrir el pago con tarjeta. Tu carrito sigue intacto: intenta de nuevo en un momento.');
       }
     }
+    // Con tarjeta, el correo sale cuando se confirma el pago.
+    if (d.metodoPago === 'EN_TIENDA') void avisos.pedidoRecibido(pedido.id);
     res.status(201).json({ pedido: { id: pedido.id, numero: pedido.numero, estado: pedido.estado, total: pedido.total }, urlPago });
   });
 
@@ -510,7 +515,7 @@ export function rutasTienda(db: DB, pasarela: PasarelaPagos | null) {
     if (fila?.s) {
       const s = await pago.obtenerSesion(fila.s);
       if (s.pagado) {
-        await confirmarPago(db, s);
+        await confirmarPago(db, s, avisos);
         throw reglaNegocio('Este pedido ya está pagado');
       }
       if (s.estado === 'open' && s.url) {
@@ -529,7 +534,7 @@ export function rutasTienda(db: DB, pasarela: PasarelaPagos | null) {
     const p = await miPedido(req);
     if (p.estado === 'PENDIENTE_PAGO' && p.metodoPago === 'STRIPE' && pasarela) {
       const [fila] = await db.select({ s: pedidosWeb.stripeSessionId }).from(pedidosWeb).where(eq(pedidosWeb.id, p.id));
-      if (fila?.s) await confirmarPago(db, await pasarela.obtenerSesion(fila.s));
+      if (fila?.s) await confirmarPago(db, await pasarela.obtenerSesion(fila.s), avisos);
     }
     res.json(await miPedido(req));
   });

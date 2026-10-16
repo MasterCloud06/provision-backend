@@ -19,8 +19,29 @@ export const cuentasTienda = pgTable('cuentas_tienda', {
   email: varchar({ length: 160 }).notNull().unique(),
   passwordHash: text().notNull(),
   activa: boolean().notNull().default(true),
+  /** Los tokens emitidos antes de esta hora ya no valen (al cambiar o recuperar la contraseña). */
+  sesionesDesde: timestamp({ withTimezone: true }),
   ...timestamps,
 });
+
+/**
+ * Enlaces para crear una contraseña nueva. Solo se guarda el hash del token: quien lea la base
+ * no puede usarlos. Valen una vez y vencen en 1 hora.
+ */
+export const recuperacionesTienda = pgTable(
+  'recuperaciones_tienda',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    cuentaId: uuid()
+      .notNull()
+      .references(() => cuentasTienda.id, { onDelete: 'cascade' }),
+    tokenHash: varchar({ length: 64 }).notNull().unique(),
+    expiraEn: timestamp({ withTimezone: true }).notNull(),
+    usadoEn: timestamp({ withTimezone: true }),
+    creadoEn: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('recuperaciones_cuenta_idx').on(t.cuentaId)],
+);
 
 /** Carrito guardado en el servidor: el cliente lo encuentra desde cualquier dispositivo. */
 export const carritoItems = pgTable(

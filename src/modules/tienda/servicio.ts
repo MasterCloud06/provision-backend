@@ -7,6 +7,7 @@ import { AppError, conflicto, noEncontrado, reglaNegocio } from '../../lib/error
 import type { PasarelaPagos, SesionPago } from '../../lib/pagos.js';
 import { moverStock } from '../inventario/servicio.js';
 import { cobrar, type PagoEntrada } from '../ventas/servicio.js';
+import type { Avisos } from './avisos.js';
 
 export type EstadoPedido = (typeof pedidosWeb.$inferSelect)['estado'];
 
@@ -159,9 +160,10 @@ async function reservarDeNuevo(tx: Exec, pedido: { id: string; numero: string; s
  * Marca el pedido como pagado a partir de una sesión de Stripe ya pagada.
  * Es idempotente: el webhook y la verificación del navegador pueden llegar los dos.
  */
-export async function confirmarPago(db: DB, sesion: SesionPago) {
+export async function confirmarPago(db: DB, sesion: SesionPago, avisos?: Avisos) {
   if (!sesion.pagado || !sesion.pedidoId) return null;
-  return db.transaction(async (tx) => {
+  let recienPagado = false;
+  const resultado = await db.transaction(async (tx) => {
     const [p] = await tx.select().from(pedidosWeb).where(eq(pedidosWeb.id, sesion.pedidoId!)).for('update');
     if (!p) return null;
     if (p.estado !== 'PENDIENTE_PAGO' && p.estado !== 'CANCELADO') return p; // ya confirmado antes
@@ -189,8 +191,11 @@ export async function confirmarPago(db: DB, sesion: SesionPago) {
       })
       .where(eq(pedidosWeb.id, p.id))
       .returning();
+    recienPagado = true;
     return actualizado!;
   });
+  if (recienPagado && resultado) void avisos?.pagoRecibido(resultado.id);
+  return resultado;
 }
 
 /**
@@ -204,6 +209,7 @@ export async function cancelarPedido(
   pedidoId: string,
   motivo: string,
   usuarioId: string | null,
+  avisos?: Avisos,
 ) {
   const [p] = await db.select().from(pedidosWeb).where(eq(pedidosWeb.id, pedidoId));
   if (!p) throw noEncontrado('Pedido');
@@ -215,7 +221,7 @@ export async function cancelarPedido(
     await pasarela.expirarSesion(p.stripeSessionId);
     const s = await pasarela.obtenerSesion(p.stripeSessionId);
     if (s.pagado) {
-      await confirmarPago(db, s);
+      await confirmarPago(db, s, avisos);
       throw conflicto('El pago de este pedido acaba de completarse: ya no se puede cancelar desde aquí');
     }
   }
@@ -225,7 +231,7 @@ export async function cancelarPedido(
     await pasarela.reembolsar(p.stripePaymentIntent!);
   }
 
-  return db.transaction(async (tx) => {
+  const cancelado = await db.transaction(async (tx) => {
     const [bloqueado] = await tx.select().from(pedidosWeb).where(eq(pedidosWeb.id, pedidoId)).for('update');
     if (!bloqueado || bloqueado.estado === 'CANCELADO') throw conflicto('El pedido ya está cancelado');
     await devolverStock(tx, bloqueado, usuarioId);
@@ -241,13 +247,15 @@ export async function cancelarPedido(
       .returning();
     return cancelado!;
   });
+  void avisos?.pedidoCancelado(cancelado.id);
+  return cancelado;
 }
 
 /**
  * Cancela los pedidos que siguen sin pagar después de su plazo y devuelve el stock.
  * Antes consulta a Stripe por si el pago sí entró y el aviso (webhook) no llegó.
  */
-export async function liberarVencidos(db: DB, pasarela: PasarelaPagos | null) {
+export async function liberarVencidos(db: DB, pasarela: PasarelaPagos | null, avisos?: Avisos) {
   const vencidos = await db
     .select({ id: pedidosWeb.id, metodoPago: pedidosWeb.metodoPago, stripeSessionId: pedidosWeb.stripeSessionId })
     .from(pedidosWeb)
@@ -258,11 +266,11 @@ export async function liberarVencidos(db: DB, pasarela: PasarelaPagos | null) {
       if (v.metodoPago === 'STRIPE' && v.stripeSessionId && pasarela) {
         const s = await pasarela.obtenerSesion(v.stripeSessionId);
         if (s.pagado) {
-          await confirmarPago(db, s);
+          await confirmarPago(db, s, avisos);
           continue;
         }
       }
-      await cancelarPedido(db, pasarela, v.id, 'Venció el plazo para pagar', null);
+      await cancelarPedido(db, pasarela, v.id, 'Venció el plazo para pagar', null, avisos);
       liberados++;
     } catch (err) {
       console.error(`[tienda] no se pudo liberar el pedido ${v.id}`, err);

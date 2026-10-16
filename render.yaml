@@ -43,3 +43,6 @@ services:
       # Fotos de productos: cloudinary://API_KEY:API_SECRET@CLOUD_NAME
       - key: CLOUDINARY_URL
         sync: false
+      # Correos a clientes (re_…). Con dominio verificado, define también CORREO_REMITENTE.
+      - key: RESEND_API_KEY
+        sync: false

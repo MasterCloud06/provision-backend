@@ -6,6 +6,7 @@ import { clientes, cuentasTienda, estadoPedidoWeb, pedidosWeb } from '../../db/s
 import { conflicto, noEncontrado, reglaNegocio } from '../../lib/errors.js';
 import { body, offset, paginacion, param, query, usuarioDe } from '../../lib/http.js';
 import type { PasarelaPagos } from '../../lib/pagos.js';
+import type { Avisos } from '../tienda/avisos.js';
 import { requierePermiso } from '../../middleware/auth.js';
 import { cancelarPedido, conteoItems, liberarVencidos, pedidoConItems, registrarVentaDePedido, type EstadoPedido } from '../tienda/servicio.js';
 import { metodoPago, ventas } from '../../db/schema/index.js';
@@ -47,7 +48,7 @@ const NOMBRE_ESTADO: Record<EstadoPedido, string> = {
 };
 
 /** Pedidos de la tienda web, para el personal. */
-export function rutasPedidosWeb(db: DB, pasarela: PasarelaPagos | null) {
+export function rutasPedidosWeb(db: DB, pasarela: PasarelaPagos | null, avisos: Avisos) {
   const r = Router();
   r.use(requierePermiso('tienda.gestionar'));
 
@@ -60,7 +61,7 @@ export function rutasPedidosWeb(db: DB, pasarela: PasarelaPagos | null) {
       }),
     );
     // De paso, libera los pedidos sin pagar que ya vencieron (el stock vuelve a la venta).
-    await liberarVencidos(db, pasarela);
+    await liberarVencidos(db, pasarela, avisos);
     const filtros: (SQL | undefined)[] = [
       f.estado === 'POR_ATENDER'
         ? or(inArray(pedidosWeb.estado, ESTADOS_POR_ATENDER), and(eq(pedidosWeb.estado, 'PENDIENTE_PAGO'), eq(pedidosWeb.metodoPago, 'EN_TIENDA')))
@@ -179,6 +180,7 @@ export function rutasPedidosWeb(db: DB, pasarela: PasarelaPagos | null) {
         .returning();
       return fila!;
     });
+    if (actualizado.estado === 'LISTO' || actualizado.estado === 'ENVIADO') void avisos.pedidoEnCamino(actualizado.id);
     res.json(actualizado);
   });
 
@@ -186,7 +188,7 @@ export function rutasPedidosWeb(db: DB, pasarela: PasarelaPagos | null) {
   r.post('/:id/cancelar', async (req, res) => {
     const u = usuarioDe(req);
     const d = body(req, z.object({ motivo: z.string().trim().min(3).max(300) }));
-    res.json(await cancelarPedido(db, pasarela, param(req), d.motivo, u.id));
+    res.json(await cancelarPedido(db, pasarela, param(req), d.motivo, u.id, avisos));
   });
 
   r.post('/:id/notas', async (req, res) => {

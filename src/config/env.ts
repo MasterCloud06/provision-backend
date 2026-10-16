@@ -56,6 +56,11 @@ const comun = z.object({
   /** Hasta cuántos días adelante se puede reservar. */
   CITAS_DIAS_ADELANTE: z.coerce.number().int().min(1).max(120).default(30),
 
+  /* Correo (Resend): recuperar contraseña y avisos de pedidos y citas. Sin RESEND_API_KEY no se envían correos. */
+  RESEND_API_KEY: z.string().startsWith('re_').optional(),
+  /** Remitente. Sin dominio verificado en Resend, solo funciona onboarding@resend.dev (y solo hacia tu propio correo). */
+  CORREO_REMITENTE: z.string().default('Provisión <onboarding@resend.dev>'),
+
   /* Cloudinary: fotos de productos. Es la "API environment variable" del dashboard:
      cloudinary://API_KEY:API_SECRET@CLOUD_NAME. Sin ella, no se pueden subir fotos. */
   CLOUDINARY_URL: z

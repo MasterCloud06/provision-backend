@@ -1,15 +1,17 @@
 import bcrypt from 'bcryptjs';
-import { eq } from 'drizzle-orm';
+import { createHash, randomBytes } from 'node:crypto';
+import { and, eq, gt, isNull } from 'drizzle-orm';
 import type { RequestHandler, Request } from 'express';
 import { Router } from 'express';
 import jwt from 'jsonwebtoken';
 import { z } from 'zod';
 import { env } from '../../config/env.js';
 import type { DB } from '../../db/client.js';
-import { clientes, cuentasTienda } from '../../db/schema/index.js';
+import { clientes, cuentasTienda, recuperacionesTienda } from '../../db/schema/index.js';
 import { AppError, conflicto, noAutorizado } from '../../lib/errors.js';
 import { body } from '../../lib/http.js';
 import { BloqueoIntentos } from '../../lib/bloqueo.js';
+import type { Avisos } from './avisos.js';
 
 /** Los tokens de clientes llevan esta audiencia: el sistema interno los rechaza. */
 export const AUDIENCIA_TIENDA = 'tienda';
@@ -28,7 +30,8 @@ declare global {
 const HASH_FALSO = bcrypt.hashSync('provision-tienda-hash-falso', 10);
 
 export function firmarTokenCliente(cuentaId: string) {
-  return jwt.sign({ sub: cuentaId }, env.JWT_SECRET, { audience: AUDIENCIA_TIENDA, expiresIn: '30d' });
+  // ts: hora de emisión en milisegundos (iat solo tiene segundos), para cerrar sesiones con precisión.
+  return jwt.sign({ sub: cuentaId, ts: Date.now() }, env.JWT_SECRET, { audience: AUDIENCIA_TIENDA, expiresIn: '30d' });
 }
 
 export function clienteDe(req: Request): ClienteSesion {
@@ -42,19 +45,32 @@ export function autenticarCliente(db: DB): RequestHandler {
     const header = req.headers.authorization;
     if (!header?.startsWith('Bearer ')) throw noAutorizado('Inicia sesión para continuar');
     let sub: string;
+    let emitido: number;
     try {
       const payload = jwt.verify(header.slice(7), env.JWT_SECRET, { audience: AUDIENCIA_TIENDA });
       if (typeof payload === 'string' || !payload.sub) throw new Error();
       sub = payload.sub;
+      emitido = typeof payload.ts === 'number' ? payload.ts : (payload.iat ?? 0) * 1000;
     } catch {
       throw noAutorizado('Tu sesión venció: vuelve a ingresar');
     }
     const [c] = await db
-      .select({ cuentaId: cuentasTienda.id, clienteId: cuentasTienda.clienteId, email: cuentasTienda.email, nombre: clientes.nombre, activa: cuentasTienda.activa })
+      .select({
+        cuentaId: cuentasTienda.id,
+        clienteId: cuentasTienda.clienteId,
+        email: cuentasTienda.email,
+        nombre: clientes.nombre,
+        activa: cuentasTienda.activa,
+        sesionesDesde: cuentasTienda.sesionesDesde,
+      })
       .from(cuentasTienda)
       .innerJoin(clientes, eq(clientes.id, cuentasTienda.clienteId))
       .where(eq(cuentasTienda.id, sub));
     if (!c || !c.activa) throw noAutorizado('Tu cuenta no está activa');
+    // Cambió o recuperó la contraseña después de emitir este token: las sesiones viejas se cierran.
+    if (c.sesionesDesde && emitido < c.sesionesDesde.getTime()) {
+      throw noAutorizado('Tu contraseña cambió: vuelve a ingresar');
+    }
     req.cliente = { cuentaId: c.cuentaId, clienteId: c.clienteId, email: c.email, nombre: c.nombre };
     next();
   };
@@ -81,8 +97,10 @@ async function perfil(db: DB, cuentaId: string) {
   return p!;
 }
 
-/** Registro e ingreso de clientes (público). */
-export function rutasAuthTienda(db: DB, bloqueo = new BloqueoIntentos()) {
+const hashToken = (t: string) => createHash('sha256').update(t).digest('hex');
+
+/** Registro, ingreso y recuperación de contraseña de clientes (público). */
+export function rutasAuthTienda(db: DB, avisos: Avisos, bloqueo = new BloqueoIntentos()) {
   const r = Router();
 
   r.post('/registro', async (req, res) => {
@@ -126,6 +144,53 @@ export function rutasAuthTienda(db: DB, bloqueo = new BloqueoIntentos()) {
     res.json({ token: firmarTokenCliente(c.id), cuenta: await perfil(db, c.id) });
   });
 
+  /**
+   * Pide un enlace para crear una contraseña nueva. Siempre responde lo mismo, exista o no la cuenta,
+   * para no revelar qué correos están registrados.
+   */
+  r.post('/recuperar', async (req, res) => {
+    if (!avisos.habilitado) {
+      throw new AppError(503, 'CORREO_NO_CONFIGURADO', 'La recuperación por correo todavía no está disponible. Comunícate con la óptica y te ayudamos.');
+    }
+    const d = body(req, z.object({ email: z.email('Correo no válido').trim().toLowerCase() }));
+    const [c] = await db
+      .select({ id: cuentasTienda.id, activa: cuentasTienda.activa, nombre: clientes.nombre })
+      .from(cuentasTienda)
+      .innerJoin(clientes, eq(clientes.id, cuentasTienda.clienteId))
+      .where(eq(cuentasTienda.email, d.email));
+    if (c?.activa) {
+      const token = randomBytes(32).toString('base64url');
+      await db.insert(recuperacionesTienda).values({ cuentaId: c.id, tokenHash: hashToken(token), expiraEn: new Date(Date.now() + 60 * 60_000) });
+      void avisos.recuperarPassword(d.email, c.nombre, `${env.TIENDA_URL}/restablecer?token=${token}`);
+    }
+    res.json({ mensaje: 'Si el correo tiene una cuenta, te enviamos un enlace para crear una contraseña nueva. Revisa también el correo no deseado.' });
+  });
+
+  /** Crea la contraseña nueva con el enlace del correo. Cierra las demás sesiones e ingresa. */
+  r.post('/restablecer', async (req, res) => {
+    const d = body(req, z.object({ token: z.string().min(20).max(200), password }));
+    const ahora = new Date();
+    const cuentaId = await db.transaction(async (tx) => {
+      const [rec] = await tx
+        .select()
+        .from(recuperacionesTienda)
+        .where(and(eq(recuperacionesTienda.tokenHash, hashToken(d.token)), isNull(recuperacionesTienda.usadoEn), gt(recuperacionesTienda.expiraEn, ahora)))
+        .for('update');
+      if (!rec) throw new AppError(422, 'ENLACE_INVALIDO', 'El enlace ya se usó o venció. Pide uno nuevo.');
+      await tx
+        .update(cuentasTienda)
+        .set({ passwordHash: await bcrypt.hash(d.password, 10), sesionesDesde: ahora })
+        .where(eq(cuentasTienda.id, rec.cuentaId));
+      // Este enlace y cualquier otro pendiente de la cuenta dejan de servir.
+      await tx.update(recuperacionesTienda).set({ usadoEn: ahora }).where(and(eq(recuperacionesTienda.cuentaId, rec.cuentaId), isNull(recuperacionesTienda.usadoEn)));
+      return rec.cuentaId;
+    });
+    const [c] = await db.select({ email: cuentasTienda.email, activa: cuentasTienda.activa }).from(cuentasTienda).where(eq(cuentasTienda.id, cuentaId));
+    bloqueo.exito(c!.email);
+    if (!c!.activa) throw noAutorizado('Tu cuenta está desactivada. Comunícate con la óptica.');
+    res.json({ token: firmarTokenCliente(cuentaId), cuenta: await perfil(db, cuentaId) });
+  });
+
   return r;
 }
 
@@ -160,8 +225,12 @@ export function rutasCuentaTienda(db: DB) {
     if (!fila || !(await bcrypt.compare(d.actual, fila.passwordHash))) {
       throw new AppError(422, 'PASSWORD_INCORRECTA', 'La contraseña actual no es correcta');
     }
-    await db.update(cuentasTienda).set({ passwordHash: await bcrypt.hash(d.nueva, 10) }).where(eq(cuentasTienda.id, c.cuentaId));
-    res.status(204).end();
+    // Las sesiones abiertas en otros dispositivos se cierran; esta sigue con un token nuevo.
+    await db
+      .update(cuentasTienda)
+      .set({ passwordHash: await bcrypt.hash(d.nueva, 10), sesionesDesde: new Date() })
+      .where(eq(cuentasTienda.id, c.cuentaId));
+    res.json({ token: firmarTokenCliente(c.cuentaId) });
   });
 
   return r;
