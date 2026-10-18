@@ -93,7 +93,8 @@ describe('citas', () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date(`${dia}T08:00:00-04:00`));
     try {
-      const panel = await e.admin.get('/panel');
+      // Sesión nueva "a esa hora": la del inicio de las pruebas puede haber vencido si el día elegido está lejos.
+      const panel = await e.como(await e.login('admin@prueba.bo', 'ClaveDePrueba123')).get('/panel');
       const t = panel.body.tareas.find((x: { clave: string }) => x.clave === 'citas-hoy');
       expect(t).toMatchObject({ cantidad: 1, pantalla: 'agenda' }); // la de Pedro (confirmada)
     } finally {
