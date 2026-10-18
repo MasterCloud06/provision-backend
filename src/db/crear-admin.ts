@@ -41,20 +41,24 @@ export async function crearAdminInicial(db: DB, datos: DatosAdmin) {
 }
 
 if (import.meta.url === `file://${process.argv[1]}` || process.argv[1]?.endsWith('crear-admin.ts')) {
-  if (!env.ADMIN_EMAIL || !env.ADMIN_PASSWORD) {
+  // En local hay un acceso de prueba fijo si no se definió otro; en desarrollo siempre hay que definirlo.
+  const local = env.APP_ENV === 'local';
+  const email = env.ADMIN_EMAIL ?? (local ? 'admin@provision.local' : undefined);
+  const password = env.ADMIN_PASSWORD ?? (local ? 'password123' : undefined);
+  if (!email || !password) {
     console.error(`Define ADMIN_EMAIL y ADMIN_PASSWORD en .env.${env.APP_ENV}`);
     process.exit(1);
   }
   const { db, cerrar } = crearDb(env.DATABASE_URL, env.DATABASE_SSL);
   const r = await crearAdminInicial(db, {
     nombre: env.ADMIN_NOMBRE,
-    email: env.ADMIN_EMAIL,
-    password: env.ADMIN_PASSWORD,
+    email,
+    password,
     sucursal: { nombre: env.SUCURSAL_NOMBRE, codigo: env.SUCURSAL_CODIGO },
   });
   console.log(
     r
-      ? `[${env.APP_ENV}] Administrador creado: ${r.admin.email} (sucursal ${r.sucursal.codigo})`
+      ? `[${env.APP_ENV}] Administrador creado: ${r.admin.email}${local && !env.ADMIN_PASSWORD ? ` / ${password}` : ''} (sucursal ${r.sucursal.codigo})`
       : `[${env.APP_ENV}] Ya existen usuarios; no se creó nada.`,
   );
   await cerrar();
